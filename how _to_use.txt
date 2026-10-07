@@ -1,0 +1,22 @@
+Required model 
+
+Download into `models/`:
+
+- yolo11n-pose.pt — auto-downloads on first run via ultralytics
+- face_detection_yunet_2023mar.onnx:
+  curl -L -o models/face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+- face_recognition_sface_2021dec.onnx:
+  curl -L -o models/face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+- best_model.pt (VLM-PAR):
+  python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('Bekhouche/VLM-PAR', filename='best_model.pt'))"
+  then copy that file to models/best_model.pt
+
+
+Run commmand 
+
+python capture_faces.py "personname"
+python enroll.py "personname" models/photos/personname/
+python connect.py
+
+Note 
+the db is still json in output/people.json

@@ -1,0 +1,8 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+new/models/
+
+new/output/people.json
