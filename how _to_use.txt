@@ -14,6 +14,10 @@ Download into `models/`:
 
 Run commmand 
 
+python -m venv .venv
+source .venv/Scripts/activate
+pip install -r requirements.txt
+
 python capture_faces.py "personname"
 python enroll.py "personname" models/photos/personname/
 python connect.py
