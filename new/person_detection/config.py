@@ -13,7 +13,7 @@ OUTPUT_DIR = PROJECT_DIR / "output"
 # --------------------------------------------------------------- video source
 # IP Webcam: keep the /video suffix
 
-SOURCE = "rtsp://admin:123456@192.168.1.21:554/media/video1"
+SOURCE = "rtsp://admin:%23Oung2548@192.168.1.13:554/media/video2"
 
 
 MAX_READ_FAILURES = 5
@@ -24,7 +24,7 @@ RECONNECT_DELAY_SEC = 1.0
 ROTATE = 0
 DISPLAY_WIDTH = 1020
 DISPLAY_HEIGHT = 500
-FRAME_SKIP = 1
+FRAME_SKIP = 5
 WINDOW_NAME = "Person Detection"
 PRINT_MOUSE_POSITION = True
 

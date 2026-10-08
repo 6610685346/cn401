@@ -1,9 +1,34 @@
 {
   "2026-10-07": {
     "Oung": {
-      "gray/red": 9,
+      "gray/red": 10,
       "gray/brown": 2,
-      "yellow/yellow": 1
+      "yellow/yellow": 4,
+      "gray/pink": 3,
+      "yellow/red": 3,
+      "yellow/black": 2,
+      "black/pink": 1,
+      "red/red": 2,
+      "black/gray": 2,
+      "brown/black": 2,
+      "brown/gray": 1,
+      "brown/pink": 1,
+      "yellow/pink": 1,
+      "red/black": 1,
+      "yellow/green": 1
+    }
+  },
+  "2026-10-08": {
+    "Oung": {
+      "black/green": 2,
+      "black/black": 4,
+      "green/black": 3,
+      "gray/green": 6,
+      "gray/black": 2
+    },
+    "Arm": {
+      "gray/black": 2,
+      "black/black": 2
     }
   }
 }
