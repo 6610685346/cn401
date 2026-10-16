@@ -4,6 +4,7 @@ import csv
 import time
 import numpy as np
 import cv2
+import threading
 
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from ..core.geometry import Box
 from .people_db import PeopleDB
 from .wardrobe import WardrobeLog
 
-CSV_COLUMNS = ["timestamp", "track_id", "name",
+CSV_COLUMNS = ["timestamp", "camera","track_id", "name",
                "shirt_color", "pants_color", "confidence"]
 
 
@@ -39,19 +40,21 @@ class TrackGate:
 
 
 class CsvLog:
-    """Appends one row per person to a CSV file."""
+    """Appends one row per person to a CSV file. Safe to share between cameras."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         if not self.path.exists():
             self._write_row(CSV_COLUMNS)
 
     def write(self, when: time.struct_time, detection: Detection,
-              appearance: Appearance, name: str | None) -> None:
+              appearance: Appearance, name: str | None, camera: str = "") -> None:
         self._write_row(
             [
                 time.strftime("%Y-%m-%d %H:%M:%S", when),
+                camera,
                 detection.track_id,
                 name or "unknown",
                 appearance.shirt_color,
@@ -62,8 +65,9 @@ class CsvLog:
 
     def _write_row(self, row) -> None:
         # utf-8-sig so Excel picks the encoding up correctly.
-        with open(self.path, "a", newline="", encoding="utf-8-sig") as csv_file:
-            csv.writer(csv_file).writerow(row)
+        with self._lock:
+            with open(self.path, "a", newline="", encoding="utf-8-sig") as csv_file:
+                csv.writer(csv_file).writerow(row)
 
 
 class CropSaver:
@@ -73,12 +77,12 @@ class CropSaver:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
 
-    def save(self, frame: Frame, detection: Detection, when: time.struct_time) -> None:
+    def save(self, frame: Frame, detection: Detection, when: time.struct_time,camera: str = "") -> None:
         crop = crop_box(frame, detection.box)
         if not crop.size:
             return
         stamp = time.strftime("%Y%m%d_%H%M%S", when)
-        path = self.directory / f"person_{detection.track_id}_{stamp}.jpg"
+        path = self.directory / f"{camera}_person_{detection.track_id}_{stamp}.jpg"
         cv2.imwrite(str(path), crop)
 
 
@@ -136,6 +140,7 @@ class PersonRecorder:
         reader: AppearanceReader | None = None,
         face_identifier: FaceIdentifier | None = None,
         wardrobe: WardrobeLog | None = None,
+        camera: str = "",
     ):
         self.csv_log = csv_log
         self.crop_saver = crop_saver
@@ -145,6 +150,7 @@ class PersonRecorder:
         self.wardrobe = wardrobe
         self.appearances = {}
         self.names = {}
+        self.camera = camera
 
     def observe(self, frame: Frame, detection: Detection,
                 faces_raw: list[tuple[Box, np.ndarray]] | None = None) -> Appearance | None:
@@ -181,10 +187,10 @@ class PersonRecorder:
     def _record(self, frame: Frame, detection: Detection, appearance: Appearance) -> None:
         now = time.localtime()
         name = self.names.get(detection.track_id)
-        self.csv_log.write(now, detection, appearance, name)
+        self.csv_log.write(now, detection, appearance, name, self.camera)
         print(
-            f"Logged ID {detection.track_id} ({name or 'unknown'}) : {appearance}")
+            f"[{self.camera}] Logged ID {detection.track_id} ({name or 'unknown'}) : {appearance}")
         if self.crop_saver:
-            self.crop_saver.save(frame, detection, now)
+            self.crop_saver.save(frame, detection, now, self.camera)
         if self.wardrobe and name and name != "unknown":
             self.wardrobe.record(name, appearance, now)

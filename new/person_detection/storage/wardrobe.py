@@ -2,6 +2,8 @@
 
 import json
 import time
+import threading
+
 from pathlib import Path
 
 from ..vision.colors import Appearance
@@ -14,6 +16,7 @@ class WardrobeLog:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._data: dict[str, dict[str, dict[str, int]]] = {}
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self) -> None:
@@ -27,10 +30,11 @@ class WardrobeLog:
     def record(self, name: str, appearance: Appearance, when: time.struct_time | None = None) -> None:
         date = time.strftime("%Y-%m-%d", when or time.localtime())
         combo = str(appearance)
-        day = self._data.setdefault(date, {})
-        person = day.setdefault(name, {})
-        person[combo] = person.get(combo, 0) + 1
-        self._save()
+        with self._lock:
+            day = self._data.setdefault(date, {})
+            person = day.setdefault(name, {})
+            person[combo] = person.get(combo, 0) + 1
+            self._save()
 
     def daily_wear(self, name: str, date: str | None = None) -> str | None:
         date = date or time.strftime("%Y-%m-%d")

@@ -1,5 +1,7 @@
 """Settings. Edit these, then run:  python connect.py"""
+import os
 
+from urllib.parse import quote
 from pathlib import Path
 
 
@@ -11,9 +13,23 @@ OUTPUT_DIR = PROJECT_DIR / "output"
 
 
 # --------------------------------------------------------------- video source
-# IP Webcam: keep the /video suffix
 
-SOURCE = "rtsp://admin:%23Oung2548@192.168.1.13:554/media/video2"
+#Credentials come from environment variables
+
+CAMERA_USER = os.environ.get("CAM_USER", "admin")
+CAMERA_PASSWORD = quote(os.environ.get("CAM_PASSWORD", ""), safe="")  # '#' -> %23
+
+
+def _rtsp(ip: str, path: str = "stream1") -> str:
+    return f"rtsp://{CAMERA_USER}:{CAMERA_PASSWORD}@{ip}:554/{path}"
+
+
+CAMERAS = {
+    "cam1": _rtsp("192.168.137.5X"),
+    "cam2": _rtsp("192.168.137.5X"),   
+}
+
+SOURCE = CAMERAS["cam1"]
 
 
 MAX_READ_FAILURES = 5
@@ -24,9 +40,9 @@ RECONNECT_DELAY_SEC = 1.0
 ROTATE = 0
 DISPLAY_WIDTH = 1020
 DISPLAY_HEIGHT = 500
-FRAME_SKIP = 5
+FRAME_SKIP = 1
 WINDOW_NAME = "Person Detection"
-PRINT_MOUSE_POSITION = True
+PRINT_MOUSE_POSITION = False
 
 
 # ----------------------------------------------------------------- models
