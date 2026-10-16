@@ -9,7 +9,7 @@ Download into `models/`:
   curl -L -o models/face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
 - best_model.pt (VLM-PAR):
   python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('Bekhouche/VLM-PAR', filename='best_model.pt'))"
-  then copy that file to models/best_model.pt
+  then copy that file to models/best_model.pt then rename to vlm_par.pt
 
 
 Run commmand 
@@ -24,3 +24,25 @@ python connect.py
 
 Note 
 the db is still json in output/people.json
+need to connect to the camera itself thru wifi between laptop and camera no need for internet
+
+
+
+cam1
+192.168.137.5X
+cam2
+192.168.137.5X
+
+set ethernet ip commmand
+netsh interface ip set address name="Ethernet" static 192.168.1.50 255.255.255.0 192.168.10.1
+
+default camera ip
+192.168.1.13
+
+
+to got back to normal internet
+net interface ip  set address name="Ethernet" dhcp 
+
+
+
+export CAM_PASSWORD='camerapassword'
