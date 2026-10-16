@@ -11,6 +11,11 @@ Download into `models/`:
   python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('Bekhouche/VLM-PAR', filename='best_model.pt'))"
   then copy that file to models/best_model.pt then rename to vlm_par.pt
 
+use gpu instead of cpu
+
+- pip uninstall -y torch torchvision
+- pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
 
 Run commmand 
 
@@ -20,29 +25,27 @@ pip install -r requirements.txt
 
 python capture_faces.py "personname"
 python enroll.py "personname" models/photos/personname/
+export CAM_PASSWORD='camerapassword'
 python connect.py
 
 Note 
 the db is still json in output/people.json
-need to connect to the camera itself thru wifi between laptop and camera no need for internet
 
 
+default camera ip
+192.168.1.13
 
 cam1
 192.168.137.5X
 cam2
 192.168.137.5X
 
+
+
+
 set ethernet ip commmand
 netsh interface ip set address name="Ethernet" static 192.168.1.50 255.255.255.0 192.168.10.1
-
-default camera ip
-192.168.1.13
-
 
 to got back to normal internet
 net interface ip  set address name="Ethernet" dhcp 
 
-
-
-export CAM_PASSWORD='camerapassword'
