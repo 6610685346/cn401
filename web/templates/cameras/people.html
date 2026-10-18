@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}คนที่ลงทะเบียน · CN401{% endblock %}
+{% block content %}
+<h1>คนที่ลงทะเบียนใบหน้า</h1>
+<p class="sub">กล้องที่รันอยู่จะจำคนที่ลงทะเบียนใหม่ได้ทันที ไม่ต้องรีสตาร์ท
+  (คนที่อยู่หน้ากล้องตอนลงทะเบียนพอดีจะเริ่มขึ้นชื่อหลังเดินออกแล้วเข้ามาใหม่)</p>
+
+{% if user.is_staff %}
+<div class="panel" style="margin-bottom:18px">
+  <h2>ลงทะเบียนคนใหม่</h2>
+  <form method="post" action="{% url 'person_enroll' %}" enctype="multipart/form-data" id="enroll-form">
+    {% csrf_token %}
+    <div class="row" style="align-items:flex-start">
+      <div class="field" style="flex:1; min-width:220px">
+        <label for="name">ชื่อ</label>
+        <input type="text" name="name" id="name" maxlength="40" required placeholder="เช่น Arm" autocomplete="off" list="known-names">
+        <datalist id="known-names">{% for p in people %}<option value="{{ p.name }}">{% endfor %}</datalist>
+        <div class="help">ถ้าใส่ชื่อที่มีอยู่แล้ว รูปจะถูก "เพิ่ม" ให้คนนั้น</div>
+      </div>
+      <div class="field" style="flex:2; min-width:260px">
+        <label for="photos">รูปหน้า (แนะนำ 3–6 รูป, สูงสุด {{ max_photos }} รูป)</label>
+        <div class="drop" id="drop">
+          <input type="file" name="photos" id="photos" accept="image/jpeg,image/png,image/webp" multiple required>
+          <div class="small" style="margin-top:6px">ลากรูปมาวางตรงนี้ได้ · บนมือถือกดเพื่อถ่ายรูปได้เลย</div>
+        </div>
+        <div class="previews" id="previews"></div>
+      </div>
+    </div>
+    <details class="small" style="margin-bottom:12px">
+      <summary>รูปแบบไหนได้ผลดี</summary>
+      <ul>
+        <li>หน้าชัด เห็นทั้งหน้า ไม่ใส่แมสก์/แว่นดำ แสงพอ</li>
+        <li>หลายมุมนิดหน่อย (ตรง, เอียงซ้าย, เอียงขวา) และหลายวัน/หลายแสงยิ่งดี</li>
+        <li>รูปที่มีหลายคน ระบบจะใช้หน้าที่ใหญ่ที่สุด และโชว์ให้ดูว่าใช้หน้าไหน</li>
+        <li>ความละเอียดเท่าไรก็ได้ รูปแนวตั้งจากมือถือก็ได้ (ไฟล์ HEIC ของ iPhone ให้แปลงเป็น JPG ก่อน)</li>
+      </ul>
+    </details>
+    <button class="btn primary" type="submit" id="enroll-btn">ลงทะเบียน</button>
+    <span class="small muted" id="enroll-wait" hidden>กำลังประมวลผลรูป…</span>
+  </form>
+</div>
+{% endif %}
+
+<div class="grid">
+{% for p in people %}
+  <div class="panel">
+    <div class="row spread"><h2 style="margin:0">{{ p.name }}</h2>
+      <span class="small muted">{{ p.photos|length }} รูป</span></div>
+    {% if p.photos %}
+      <div class="thumbs">{% for f in p.photos|slice:":8" %}<img src="{% url 'person_photo' p.name f %}" alt="รูปของ {{ p.name }}" loading="lazy">{% endfor %}</div>
+    {% else %}
+      <p class="small muted">ไม่มีรูปเก็บไว้ในเครื่อง (ลงทะเบียนด้วยวิธีอื่น) — ถ้าเพิ่มรูป ระบบจะคำนวณจากรูปใหม่เท่านั้น</p>
+    {% endif %}
+    {% if p.days %}
+    <table><thead><tr><th>วันที่</th><th>ชุดที่ใส่บ่อยสุด</th></tr></thead><tbody>
+      {% for day, combo in p.days %}<tr><td class="mono">{{ day }}</td><td>{{ combo }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% endif %}
+    {% if user.is_staff %}
+    <div class="row" style="margin-top:10px">
+      <form method="post" action="{% url 'person_enroll' %}" enctype="multipart/form-data" class="inline add-photos">
+        {% csrf_token %}<input type="hidden" name="name" value="{{ p.name }}">
+        <label class="btn" style="margin:0;font-weight:400">เพิ่มรูป
+          <input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="this.form.submit()"></label>
+      </form>
+      <form method="post" action="{% url 'person_delete' %}" class="inline"
+            onsubmit="return confirm('ลบ {{ p.name|escapejs }} และรูปทั้งหมดของเขา?')">
+        {% csrf_token %}<input type="hidden" name="name" value="{{ p.name }}">
+        <button class="btn danger">ลบ</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+{% empty %}
+  <div class="panel"><p class="muted">ยังไม่มีใครลงทะเบียน{% if user.is_staff %} — ใช้ฟอร์มด้านบนได้เลย{% endif %}</p></div>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// Preview chosen photos and allow drag & drop onto the box.
+(function () {
+  const input = document.getElementById("photos");
+  if (!input) return;
+  const drop = document.getElementById("drop"), previews = document.getElementById("previews");
+  function show() {
+    previews.innerHTML = "";
+    Array.from(input.files).forEach((file) => {
+      const img = document.createElement("img");
+      img.alt = file.name; img.title = file.name;
+      img.src = URL.createObjectURL(file);
+      previews.appendChild(img);
+    });
+  }
+  input.addEventListener("change", show);
+  ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, () => drop.classList.remove("over")));
+  drop.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    if (ev.dataTransfer.files.length) { input.files = ev.dataTransfer.files; show(); }
+  });
+  document.getElementById("enroll-form").addEventListener("submit", () => {
+    document.getElementById("enroll-btn").disabled = true;
+    document.getElementById("enroll-wait").hidden = false;
+  });
+})();
+</script>
+{% endblock %}

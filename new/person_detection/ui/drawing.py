@@ -39,10 +39,12 @@ class Overlay:
     """Draws people, faces and the head count."""
 
     @staticmethod
-    def person_label(detection: Detection, appearance: Appearance | None, name: str | None = None) -> str:
-
+    def person_label(detection: Detection, appearance: Appearance | None, name: str | None = None,
+                     global_id: int | None = None) -> str:
         label = name if name else (
             f"ID: {detection.track_id}" if detection.is_tracked else "person")
+        if global_id is not None:  # same G-number on every camera
+            label = f"G{global_id} {label}"
         detail = str(
             appearance) if appearance else f"{detection.confidence:.2f}"
 
@@ -51,11 +53,12 @@ class Overlay:
     def draw_person(self, frame: Frame, detection: Detection,
                     appearance: Appearance | None = None,
                     attributes: PedestrianAttributes | None = None,
-                    name: str | None = None) -> None:
+                    name: str | None = None,
+                    global_id: int | None = None) -> None:
         x1, y1, x2, y2 = detection.box
         cv2.rectangle(frame, (x1, y1), (x2, y2), BOX_COLOR, 2)
         draw_label(frame, self.person_label(
-            detection, appearance, name), (x1, max(y1 - 4, 20)))
+            detection, appearance, name, global_id), (x1, max(y1 - 4, 20)))
         if attributes:
             draw_label(frame, str(attributes), (x1, min(y2, frame.shape[0] - 4)),
                        scale=0.48, bg_color=(90, 70, 20))

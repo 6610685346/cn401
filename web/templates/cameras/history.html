@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}ประวัติ · CN401{% endblock %}
+{% block content %}
+<h1>ประวัติการตรวจจับ</h1>
+<p class="sub">อ่านจากไฟล์ CSV ใน <span class="mono">new/output/</span> (ทั้งจากแอปและจาก connect.py)</p>
+
+<form class="panel row" method="get" style="margin-bottom:16px; align-items:flex-end">
+  <div style="min-width:160px"><label for="date">วันที่</label>
+    <select name="date" id="date" onchange="this.form.submit()">
+      {% for d in dates %}<option value="{{ d }}" {% if d == date %}selected{% endif %}>{{ d }}</option>{% empty %}<option>ยังไม่มีข้อมูล</option>{% endfor %}
+    </select></div>
+  <div style="min-width:200px"><label for="source">แหล่ง</label>
+    <select name="source" id="source">
+      <option value="">ทั้งหมด</option>
+      {% for tag, label in sources %}<option value="{{ tag }}" {% if tag == source %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+  <div style="min-width:160px"><label for="name">ชื่อ</label>
+    <input type="search" name="name" id="name" value="{{ name }}" placeholder="เช่น Oung"></div>
+  <button class="btn primary">กรอง</button>
+</form>
+
+<div class="panel">
+  <div class="row spread">
+    <h2>{{ total }} รายการ{% if total > 500 %} (แสดง 500 ล่าสุด){% endif %}</h2>
+    <div class="row small">ดาวน์โหลด:
+      {% for f in day_files %}<a href="{% url 'history_download' f.file %}">{{ f.source }}</a>{% empty %}-{% endfor %}</div>
+  </div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>เวลา</th><th>แหล่ง</th><th>ID</th><th>ชื่อ</th><th>เสื้อ</th><th>กางเกง</th><th>ความมั่นใจ</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr><td class="mono">{{ r.timestamp }}</td><td>{{ r.source }}</td><td>{{ r.track_id }}</td><td><b>{{ r.name }}</b></td>
+          <td>{{ r.shirt_color }}</td><td>{{ r.pants_color }}</td><td>{{ r.confidence }}</td></tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">ไม่มีข้อมูล</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

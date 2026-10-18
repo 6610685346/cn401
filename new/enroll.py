@@ -1,13 +1,18 @@
-"""Enroll a person's face. Usage: python enroll.py "Alice" photos/alice/"""
+"""Enroll a person's face.  Usage:  python enroll.py "Alice" models/photos/Alice/
+
+Uses the same checks as the web portal (person_detection/enrollment.py):
+the most confident big face in each photo, and photos that do not look like
+the others are left out. Photos from another folder are copied into
+models/photos/<name>/ so the web page can show them and add more later.
+"""
 
 import sys
 from pathlib import Path
 
-import cv2
-
 from person_detection import config
-from person_detection.vision.face import FaceDetector, FaceRecognizer
+from person_detection.enrollment import PHOTO_TYPES, EnrollError, FaceEnroller
 from person_detection.storage.people_db import PeopleDB
+from person_detection.vision.face import FaceDetector, FaceRecognizer
 
 
 def main() -> None:
@@ -16,35 +21,28 @@ def main() -> None:
         sys.exit(1)
 
     name, photos_dir = sys.argv[1], Path(sys.argv[2])
-    detector = FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE)
-    recognizer = FaceRecognizer(
-        config.FACE_RECOGNITION_MODEL_PATH, config.FACE_MATCH_THRESHOLD)
-    db = PeopleDB(config.PEOPLE_DB_PATH)
-
-    embeddings = []
-    for path in sorted(photos_dir.glob("*")):
-        if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-            continue
-        image = cv2.imread(str(path))
-        if image is None:
-            print(f"Skipping unreadable file: {path}")
-            continue
-        faces = detector.detect_raw(image)
-        if not faces:
-            print(f"No face found in {path}, skipping")
-            continue
-        box, raw_row = max(faces, key=lambda bf: (
-            bf[0][2] - bf[0][0]) * (bf[0][3] - bf[0][1]))
-        embeddings.append(recognizer.embed(image, raw_row))
-        print(f"Used {path.name}")
-
-    if not embeddings:
-        print("No usable photos found; nothing enrolled.")
+    enroller = FaceEnroller(
+        FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE),
+        FaceRecognizer(config.FACE_RECOGNITION_MODEL_PATH, config.FACE_MATCH_THRESHOLD),
+        PeopleDB(config.PEOPLE_DB_PATH),
+        config.PHOTOS_DIR,
+    )
+    try:
+        if photos_dir.resolve() == enroller.person_dir(name):
+            result = enroller.enroll_folder(name)
+        else:
+            files = sorted(p for p in photos_dir.glob("*") if p.suffix.lower() in PHOTO_TYPES)
+            result = enroller.enroll(name, [(p.name, p.read_bytes()) for p in files])
+    except EnrollError as exc:
+        print(f"Nothing enrolled: {exc}")
         sys.exit(1)
 
-    db.enroll(name, embeddings)
-    print(
-        f"Enrolled '{name}' from {len(embeddings)} photo(s) -> {config.PEOPLE_DB_PATH}")
+    for report in result.reports:
+        mark = "used   " if report.ok else "skipped"
+        print(f"  {mark} {report.filename}: {report.message}")
+    if result.looks_like:
+        print(f"WARNING: looks a lot like '{result.looks_like[0]}' (similarity {result.looks_like[1]})")
+    print(f"Enrolled '{result.name}' from {result.used} photo(s) -> {config.PEOPLE_DB_PATH}")
 
 
 if __name__ == "__main__":

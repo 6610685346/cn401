@@ -24,3 +24,32 @@ python connect.py
 
 Note 
 the db is still json in output/people.json
+
+
+Desktop app (V02) - main program
+
+double-click "CN401 App.bat"   (or setup_and_run.bat -> menu 1)
+everything is in the app window: IP cameras, this computer's camera, people,
+floor calibration, floor map, history, settings, user accounts (ผู้ดูแล).
+cameras record while the app is open (minimise is fine, closing stops them).
+log file: logs/app.log
+desktop shortcut: setup_and_run.bat -> menu 6
+
+
+Web (LAN) - history only
+
+the app also serves https://<this computer's IP>:8000/ for other computers:
+log in, read and download the history. nothing else is on the web.
+make accounts in the app: ผู้ดูแล -> Users -> Add.
+app closed?  setup_and_run.bat -> menu 5  (history page only)
+
+GPU (NVIDIA) - do this once
+
+pip install -r requirements.txt gives the CPU build of PyTorch on Windows: it works, but slowly
+(the app's first page then says "CPU (ไม่พบ CUDA)"). To use the graphics card:
+1. open https://pytorch.org/get-started/locally/ and pick Stable / Windows / Pip / Python /
+   the CUDA version your driver supports (see: nvidia-smi)
+2. open Command Prompt in this folder and run  .venv\Scripts\activate
+3. run the command from that page, adding  --force-reinstall  and the versions from
+   requirements.txt:  torch==2.14.1 torchvision==0.29.1
+4. start the app again: the first page should show the graphics card name

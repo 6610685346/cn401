@@ -6,6 +6,7 @@ this adapter uses the trained image encoder and classifier heads present in
 the file.
 """
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from ..core.geometry import Box, Frame, crop_box
+from ..core.geometry import Box, Frame, crop_box, short_side
 
 # The checkpoint has eleven color classes, but it does not include their names.
 # This provisional index mapping is inferred from synthetic color probes, not
@@ -56,7 +57,7 @@ class VLMParReader:
     """Predict clothing colors and accessory presence from a person crop."""
 
     INPUT_SIZE = 224
-    MIN_BOX_HEIGHT_PX = 48
+    MIN_BOX_HEIGHT_FRAC = 0.096  # of the frame's short side (was 48 px on ~500 px)
 
     def __init__(self, checkpoint: str | Path, color_labels=DEFAULT_COLOR_LABELS):
         try:
@@ -114,11 +115,18 @@ class VLMParReader:
             )
         self.vision.to(self.device).eval()
         self.heads.to(self.device).eval()
+        # One reader is shared by every camera (the model is large), so calls
+        # from different camera threads take turns on the GPU.
+        self._lock = threading.Lock()
+
+    def read(self, frame: Frame, box: Box) -> PedestrianAttributes | None:
+        with self._lock:
+            return self._read(frame, box)
 
     @torch.inference_mode()
-    def read(self, frame: Frame, box: Box) -> PedestrianAttributes | None:
+    def _read(self, frame: Frame, box: Box) -> PedestrianAttributes | None:
         x1, y1, x2, y2 = box
-        if y2 - y1 < self.MIN_BOX_HEIGHT_PX:
+        if y2 - y1 < self.MIN_BOX_HEIGHT_FRAC * short_side(frame):
             return None
         crop = crop_box(frame, box)
         if crop.size == 0:

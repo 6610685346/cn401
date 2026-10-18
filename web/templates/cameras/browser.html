@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}กล้องของเครื่องนี้ · CN401{% endblock %}
+{% block content %}
+<h1>กล้องของเครื่องนี้</h1>
+<p class="sub">ใช้กล้องที่ต่อกับคอมพิวเตอร์เครื่องนี้ (webcam / กล้อง USB) ใช้ได้ทุกความละเอียด
+  · คนที่ตรวจเจอจะถูกบันทึกในประวัติชื่อ "{{ csv_source }}"
+  · ถ้าอยากให้กล้อง USB บันทึกตลอดเวลาที่แอปเปิด ให้เพิ่มเป็นกล้องในหน้า "กล้อง IP" ด้วยเลข 0 หรือ 1 แทน URL</p>
+
+<div class="notice" id="insecure" hidden>
+  หน้านี้ไม่ได้เปิดผ่าน <b>https://</b> เบราว์เซอร์จึงไม่ยอมให้ใช้กล้อง ให้เปิดเว็บด้วยลิงก์ https://… ที่หน้าจอเซิร์ฟเวอร์แสดง
+  (หรือเปิดจากเครื่องเซิร์ฟเวอร์เองที่ http://localhost)
+</div>
+<div class="notice" id="error" hidden></div>
+
+<div class="layout">
+  <div>
+    <div class="stage" id="stage">
+      <canvas id="view" class="view" hidden></canvas>
+      <div class="empty" id="placeholder">เลือกกล้องแล้วกด "เริ่ม"</div>
+    </div>
+    <div class="stats">
+      <div class="stat">ความละเอียดกล้อง <b id="st-camera">-</b></div>
+      <div class="stat">ส่งไปประมวลผล <b id="st-sent">-</b></div>
+      <div class="stat">คนในภาพ <b id="st-people">-</b></div>
+      <div class="stat">ความเร็ว <b id="st-fps">-</b></div>
+      <div class="stat">เวลาเซิร์ฟเวอร์ <b id="st-ms">-</b></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="field"><label for="device">กล้อง</label>
+      <select id="device"><option value="">— กด "ค้นหากล้อง" —</option></select></div>
+    <div class="row" style="margin-bottom:14px"><button class="btn" id="find">ค้นหากล้อง</button></div>
+    <div class="field"><label for="rotate">หมุนภาพ</label>
+      <select id="rotate">{% for v, t in rotate_choices %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="long_side">ขนาดที่ใช้ประมวลผล</label>
+      <select id="long_side">{% for v, t in long_side_choices %}<option value="{{ v }}" {% if v == 960 %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="check"><input type="checkbox" id="face" checked> จดจำใบหน้า (ชื่อคน)</label></div>
+    <div class="field"><label class="check"><input type="checkbox" id="vlm" checked> VLM-PAR (สีเสื้อผ้า/กระเป๋า/หมวก)</label></div>
+    <div class="row">
+      <button class="btn primary" id="start">เริ่ม</button>
+      <button class="btn" id="stop" disabled>หยุด</button>
+    </div>
+    <h2 style="margin-top:18px">คนในภาพตอนนี้</h2>
+    <ul class="feed" id="people"><li class="muted">-</li></ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% load static %}
+<script>
+  window.PORTAL = {
+    frameUrl: "{% url 'api_browser_frame' %}",
+    closeUrl: "{% url 'api_browser_close' %}",
+    csrf: "{{ csrf_token }}",
+    maxFps: {{ max_fps }},
+  };
+</script>
+<script src="{% static 'browser.js' %}"></script>
+{% endblock %}

@@ -6,3 +6,18 @@ __pycache__/
 new/models/
 
 new/output/people.json
+
+# web portal: local database, secret key and HTTPS certificate (never commit)
+web/db.sqlite3
+web/.secret_key
+web/certs/
+new/output/*.tmp
+# settings saved from the web page (per machine)
+new/settings.json
+new/settings.tmp
+# desktop app: log files and the window's own browser data
+logs/
+web/.webview/
+web/.edge-app/
+# detection output: names, face crops, CSV logs (personal data, per machine)
+new/output/

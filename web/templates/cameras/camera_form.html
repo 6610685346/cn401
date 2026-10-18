@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · CN401{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="sub">กล้องความละเอียดเท่าไรก็ได้ (480p ถึง 4K, แนวตั้งก็ได้) ระบบจะปรับขนาดให้เอง</p>
+<div class="panel" style="max-width:720px">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="field">
+        {% if field.field.widget.input_type == "checkbox" %}
+          <label class="check">{{ field }} {{ field.label }}</label>
+        {% else %}
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+        {% endif %}
+        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        {% for e in field.errors %}<div class="err">{{ e }}</div>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="row">
+      <button class="btn primary" type="submit">บันทึก</button>
+      <a class="btn" href="{% url 'dashboard' %}">ยกเลิก</a>
+    </div>
+  </form>
+  {% if camera %}
+  <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+  <form method="post" action="{% url 'camera_delete' camera.id %}" onsubmit="return confirm('ลบกล้อง {{ camera.name|escapejs }}?')">
+    {% csrf_token %}<button class="btn danger">ลบกล้องนี้</button>
+    <span class="small muted">ไฟล์ประวัติ CSV ของกล้องนี้จะยังอยู่</span>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

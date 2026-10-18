@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}แผนผัง · CN401{% endblock %}
+{% block content %}
+<h1>แผนผัง (มองจากด้านบน)</h1>
+<p class="sub">คนจากทุกกล้องที่ปรับเทียบพื้นแล้ว รวมเป็นคนเดียวกันเมื่อยืนจุดเดียวกัน · G-ตัวเลขเดียวกัน = คนเดียวกันในทุกกล้อง</p>
+
+{% if not calibrated %}
+<div class="notice">ยังไม่มีกล้องที่ปรับเทียบพื้น ไปที่หน้ากล้อง แล้วกด <b>ปรับเทียบพื้น</b> (ต้องเป็นผู้ดูแล)</div>
+{% endif %}
+{% if uncalibrated %}
+<p class="small muted">ยังไม่ได้ปรับเทียบ (ไม่ถูกรวม): {% for c in uncalibrated %}{% if user.is_staff %}<a href="{% url 'camera_calibrate' c.id %}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+
+<div class="layout">
+  <div class="panel" style="padding:8px">
+    <canvas id="map" class="floor-map" aria-label="แผนผังตำแหน่งคน"></canvas>
+    <div class="small muted" id="legend" style="padding:4px 8px"></div>
+  </div>
+  <div class="panel">
+    <h2>คนที่อยู่ตอนนี้ <span class="muted" id="count"></span></h2>
+    <ul class="feed" id="people"><li class="muted">-</li></ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>window.FLOOR_URL = "{% url 'api_floor' %}";</script>
+<script src="{% static 'floor.js' %}"></script>
+{% endblock %}

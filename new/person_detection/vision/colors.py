@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from ..core.geometry import Box, Frame, crop_band
+from ..core.geometry import Box, Frame, crop_band, short_side
 
 COLOR_NAMES = (
     "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink",
@@ -95,8 +95,10 @@ class AppearanceReader:
     SHIRT_BAND = (0.20, 0.55)
     PANTS_BAND = (0.58, 0.90)
 
-    MIN_BOX_HEIGHT_PX = 60  # smaller than this and the colours are unreadable
-    MIN_BOX_WIDTH_PX = 10
+    # Size limits as fractions of the frame's short side, so they mean the same
+    # thing at every camera resolution. (Were 60 px / 10 px on a ~500 px frame.)
+    MIN_BOX_HEIGHT_FRAC = 0.12  # smaller than this and the colours are unreadable
+    MIN_BOX_WIDTH_FRAC = 0.02
 
     def __init__(self, classifier: ColorClassifier | None = None):
         self.classifier = classifier or ColorClassifier()
@@ -104,7 +106,9 @@ class AppearanceReader:
     def read(self, frame: Frame, box: Box) -> Appearance | None:
         """Return the person's appearance, or None if the box is unreadable."""
         x1, y1, x2, y2 = box
-        if y2 - y1 < self.MIN_BOX_HEIGHT_PX or x2 - x1 < self.MIN_BOX_WIDTH_PX:
+        side = short_side(frame)
+        if (y2 - y1 < self.MIN_BOX_HEIGHT_FRAC * side
+                or x2 - x1 < self.MIN_BOX_WIDTH_FRAC * side):
             return None
 
         shirt = self.classifier.dominant(

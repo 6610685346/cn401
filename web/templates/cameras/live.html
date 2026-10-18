@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ camera.name }} · CN401{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>{{ camera.name }}</h1>
+    <p class="sub mono">{{ camera.masked_source }}</p>
+  </div>
+  <div class="row">
+    {% if user.is_staff %}
+    <form class="inline" method="post" action="{% url 'camera_toggle' camera.id %}">{% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'camera_live' camera.id %}">
+      {% if camera.should_run %}<input type="hidden" name="run" value="0"><button class="btn">หยุด</button>
+      {% else %}<input type="hidden" name="run" value="1"><button class="btn primary">เริ่ม</button>{% endif %}
+    </form>
+    <a class="btn" href="{% url 'camera_edit' camera.id %}">ตั้งค่า</a>
+    <a class="btn" href="{% url 'camera_calibrate' camera.id %}">ปรับเทียบพื้น</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="layout" data-camera="{{ camera.id }}">
+  <div>
+    <div class="stage" id="stage">
+      {% if camera.should_run %}
+        <img id="live" alt="ภาพสดจาก {{ camera.name }}" data-src="{% url 'camera_mjpeg' camera.id %}">
+      {% else %}
+        <div class="empty">กล้องนี้หยุดอยู่ {% if user.is_staff %}กด "เริ่ม" เพื่อเปิด{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="stats">
+      <div class="stat">สถานะ <b><span class="pill s-stopped" data-field="status">-</span></b></div>
+      <div class="stat">คนในภาพ <b data-field="people_now">-</b></div>
+      <div class="stat">ความเร็ว <b><span data-field="fps">-</span> fps</b></div>
+      <div class="stat">ความละเอียดกล้อง <b data-field="source_size">-</b></div>
+      <div class="stat">ขนาดที่ประมวลผล <b data-field="process_size">-</b></div>
+    </div>
+    <p class="small muted" data-field="message"></p>
+  </div>
+  <div class="panel">
+    <h2>คนที่บันทึกล่าสุด</h2>
+    <ul class="feed" data-field="recent"><li class="muted">ยังไม่มี</li></ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% load static %}
+<script>window.STATUS_URL = "{% url 'api_status' %}";</script>
+<script src="{% static 'status.js' %}"></script>
+{% endblock %}

@@ -13,7 +13,7 @@ import cv2
 
 from person_detection import config
 from person_detection.vision.face import FaceDetector
-from person_detection.sources.stream import VideoStream
+from person_detection.sources.stream import open_stream
 from person_detection.core.geometry import FramePreprocessor
 
 
@@ -27,11 +27,10 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     detector = FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE)
-    preprocess = FramePreprocessor(
-        config.ROTATE, config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT)
+    preprocess = FramePreprocessor(config.ROTATE, config.PROCESS_LONG_SIDE)
 
     saved = 0
-    with VideoStream(config.SOURCE, config.MAX_READ_FAILURES, config.RECONNECT_DELAY_SEC) as stream:
+    with open_stream(config.SOURCE, config.MAX_READ_FAILURES, config.RECONNECT_DELAY_SEC) as stream:
         print("Press SPACE to save a photo when a green face box is shown, 'q' to quit.")
         for frame in stream.frames():
             frame = preprocess(frame)

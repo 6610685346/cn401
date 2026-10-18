@@ -1,0 +1,54 @@
+{% load static %}<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CN401 Portal{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'portal.css' %}">
+</head>
+<body>
+{% if user.is_authenticated and portal_mode == "web" %}
+{# LAN web page: history only. The other pages exist only in the desktop app. #}
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="{% url 'history' %}">CN401 ตรวจจับคน</a>
+    <nav><a href="{% url 'history' %}" class="on">ประวัติ</a></nav>
+    <div class="who">
+      {{ user.get_username }}
+      <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">ออกจากระบบ</button></form>
+    </div>
+  </div>
+</header>
+{% elif user.is_authenticated %}
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="{% url 'dashboard' %}">CN401 ตรวจจับคน</a>
+    <nav>
+      {% with u=request.resolver_match.url_name %}
+      <a href="{% url 'dashboard' %}" class="{% if u == 'dashboard' or u == 'camera_live' or u == 'camera_calibrate' %}on{% endif %}">กล้อง IP</a>
+      <a href="{% url 'browser_camera' %}" class="{% if u == 'browser_camera' %}on{% endif %}">กล้องของเครื่องนี้</a>
+      <a href="{% url 'floor_map' %}" class="{% if u == 'floor_map' %}on{% endif %}">แผนผัง</a>
+      <a href="{% url 'history' %}" class="{% if u == 'history' %}on{% endif %}">ประวัติ</a>
+      <a href="{% url 'people' %}" class="{% if u == 'people' %}on{% endif %}">คนที่ลงทะเบียน</a>
+      {% if user.is_staff %}<a href="{% url 'settings_page' %}" class="{% if u == 'settings_page' %}on{% endif %}">ตั้งค่าระบบ</a>
+      <a href="{% url 'admin:index' %}">ผู้ดูแล</a>{% endif %}
+      {% endwith %}
+    </nav>
+    {% if is_app and user.get_username == "cn401-app" %}
+    <div class="who small muted">แอปบนเครื่องนี้</div>
+    {% else %}
+    <div class="who">
+      {{ user.get_username }}
+      <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">ออกจากระบบ</button></form>
+    </div>
+    {% endif %}
+  </div>
+</header>
+{% endif %}
+<main class="wrap">
+  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>
