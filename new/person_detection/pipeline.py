@@ -13,11 +13,12 @@ frames of *that* camera.
 from __future__ import annotations
 
 import threading
-from dataclasses import asdict, dataclass, field
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
 
 from . import config
-from .core.geometry import Frame, FramePreprocessor, normalize_box
+from .core.geometry import Frame, FramePreprocessor, crop_box, normalize_box, short_side
 from .counting.direction import DirectionTracker
 from .storage.people_db import PeopleDB
 from .storage.recorder import (CropSaver, CsvLog, DailyCsvLog, FaceIdentifier,
@@ -93,6 +94,7 @@ class FrameProcessor:
         vlm_par: VLMParReader | None = None,
         vlm_min_frames: int = config.VLM_PAR_MIN_FRAMES,
         identity=None,
+        vlm_pool: ThreadPoolExecutor | None = None,
     ):
         self.preprocess = preprocess
         self.detector = detector
@@ -104,6 +106,11 @@ class FrameProcessor:
         self.vlm_min_frames = vlm_min_frames
         self.vlm_attributes = {}  # track_id -> attributes, inferred once per track
         self.vlm_frames_seen = {}
+        # VLM-PAR is slow, so it runs in a background thread and its answer is
+        # picked up on a later frame: the video does not stall while it thinks.
+        # None = run it inline (blocking), e.g. in tests.
+        self.vlm_pool = vlm_pool
+        self._vlm_pending: dict[int, Future] = {}
         # Optional callable(FrameResult) run before drawing; multicam's CameraLink
         # uses it to add global ids and names recognised by other cameras.
         self.identity = identity
@@ -182,13 +189,43 @@ class FrameProcessor:
         track_id = detection.track_id
         attributes = self.vlm_attributes.get(track_id)
         if attributes is None:
+            attributes = self._collect_vlm(track_id)
+        if attributes is None and track_id not in self._vlm_pending:
             seen = self.vlm_frames_seen.get(track_id, 0) + 1
             self.vlm_frames_seen[track_id] = seen
             if seen >= self.vlm_min_frames:
-                attributes = self.vlm_par.read(frame, detection.box)
-                if attributes is not None:
-                    self.vlm_attributes[track_id] = attributes
+                if self.vlm_pool is None:
+                    attributes = self.vlm_par.read(frame, detection.box)
+                else:
+                    self._submit_vlm(frame, detection)
+        if attributes is not None:
+            self.vlm_attributes[track_id] = attributes
         return attributes
+
+    def _submit_vlm(self, frame: Frame, detection) -> None:
+        x1, y1, x2, y2 = detection.box
+        # Size check against the whole frame (the reader would only see the crop).
+        if y2 - y1 < self.vlm_par.MIN_BOX_HEIGHT_FRAC * short_side(frame):
+            return
+        # Copy the crop now: the overlay paints over `frame` before the worker runs.
+        crop = crop_box(frame, detection.box).copy()
+        if crop.size == 0:
+            return
+        height, width = crop.shape[:2]
+        self._vlm_pending[detection.track_id] = self.vlm_pool.submit(
+            self.vlm_par.read, crop, (0, 0, width, height))
+
+    def _collect_vlm(self, track_id: int):
+        """A finished background read for this track, if there is one."""
+        future = self._vlm_pending.get(track_id)
+        if future is None or not future.done():
+            return None
+        del self._vlm_pending[track_id]
+        try:
+            return future.result()
+        except Exception as exc:  # keep the video going if the model fails
+            print(f"VLM-PAR failed for track {track_id}: {exc}")
+            return None
 
     def _forget_stale_tracks(self) -> None:
         if self._frame_index % 30:
@@ -198,6 +235,7 @@ class FrameProcessor:
             del self._last_seen[track_id]
             self.vlm_attributes.pop(track_id, None)
             self.vlm_frames_seen.pop(track_id, None)
+            self._vlm_pending.pop(track_id, None)
             if self.recorder:
                 self.recorder.forget(track_id)
             if self.direction_tracker:
@@ -208,15 +246,18 @@ class FrameProcessor:
 class CameraOptions:
     """Per-camera choices. Defaults come from config.py."""
 
-    rotate: int = config.ROTATE
-    long_side: int = config.PROCESS_LONG_SIDE
-    enable_face_detection: bool = config.ENABLE_FACE_DETECTION
-    enable_face_recognition: bool = config.ENABLE_FACE_RECOGNITION
-    enable_vlm_par: bool = config.ENABLE_VLM_PAR
-    enable_direction: bool = config.ENABLE_DIRECTION
-    save_csv: bool = config.SAVE_CSV
-    save_crops: bool = config.SAVE_CROPS
+    # Read from config when the options are made (not when this file is
+    # imported), so settings changed later still apply.
+    rotate: int = field(default_factory=lambda: config.ROTATE)
+    long_side: int = field(default_factory=lambda: config.PROCESS_LONG_SIDE)
+    enable_face_detection: bool = field(default_factory=lambda: config.ENABLE_FACE_DETECTION)
+    enable_face_recognition: bool = field(default_factory=lambda: config.ENABLE_FACE_RECOGNITION)
+    enable_vlm_par: bool = field(default_factory=lambda: config.ENABLE_VLM_PAR)
+    enable_direction: bool = field(default_factory=lambda: config.ENABLE_DIRECTION)
+    save_csv: bool = field(default_factory=lambda: config.SAVE_CSV)
+    save_crops: bool = field(default_factory=lambda: config.SAVE_CROPS)
     csv_tag: str | None = None  # None -> output/person_log_<date>.csv
+    camera: str = ""  # camera name for the CSV "camera" column and crop file names
 
 
 class PipelineFactory:
@@ -225,6 +266,7 @@ class PipelineFactory:
     def __init__(self):
         self._lock = threading.Lock()
         self._vlm_par: VLMParReader | None = None
+        self._vlm_pool: ThreadPoolExecutor | None = None
         self._people_db: PeopleDB | None = None
         self._wardrobe: WardrobeLog | None = None
 
@@ -235,6 +277,13 @@ class PipelineFactory:
                 self._vlm_par = VLMParReader(config.VLM_PAR_MODEL_PATH,
                                              config.VLM_PAR_COLOR_LABELS)
             return self._vlm_par
+
+    def vlm_pool(self) -> ThreadPoolExecutor:
+        """One background thread for VLM-PAR, shared by all cameras (one model, one GPU)."""
+        with self._lock:
+            if self._vlm_pool is None:
+                self._vlm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vlm-par")
+            return self._vlm_pool
 
     def people_db(self) -> PeopleDB:
         with self._lock:
@@ -260,13 +309,15 @@ class PipelineFactory:
 
         return FrameProcessor(
             preprocess=FramePreprocessor(options.rotate, options.long_side),
-            detector=PersonDetector(config.MODEL_PATH, config.CONFIDENCE),
+            detector=PersonDetector(config.MODEL_PATH, config.CONFIDENCE,
+                                    imgsz=config.YOLO_IMGSZ, half=config.YOLO_HALF),
             face_detector=face_detector,
             recorder=self._recorder(options, on_record, identity),
             direction_tracker=DirectionTracker() if options.enable_direction else None,
             vlm_par=self.vlm_par() if options.enable_vlm_par else None,
             vlm_min_frames=config.VLM_PAR_MIN_FRAMES,  # read now: may be changed from the web
             identity=identity,
+            vlm_pool=self.vlm_pool() if options.enable_vlm_par else None,
         )
 
     def _recorder(self, options: CameraOptions, on_record, identity=None) -> PersonRecorder | None:
@@ -289,4 +340,5 @@ class PipelineFactory:
             wardrobe=self.wardrobe() if options.enable_face_recognition else None,
             on_record=on_record,
             identity_lookup=identity.lookup if identity else None,
+            camera=options.camera or (options.csv_tag or ""),
         )

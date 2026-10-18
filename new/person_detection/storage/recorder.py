@@ -19,7 +19,7 @@ from ..core.geometry import Box, Frame, crop_box
 from .people_db import PeopleDB
 from .wardrobe import WardrobeLog
 
-CSV_COLUMNS = ["timestamp", "track_id", "name",
+CSV_COLUMNS = ["timestamp", "camera", "track_id", "name",
                "shirt_color", "pants_color", "confidence", "global_id"]
 
 
@@ -60,11 +60,13 @@ class CsvLog:
         return self.path
 
     def write(self, when: time.struct_time, detection: Detection,
-              appearance: Appearance, name: str | None, global_id: int | None = None) -> None:
+              appearance: Appearance, name: str | None, global_id: int | None = None,
+              camera: str = "") -> None:
         self._write_row(
             self.path_for(when),
             {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", when),
+                "camera": camera,
                 "track_id": detection.track_id,
                 "name": name or "unknown",
                 "shirt_color": appearance.shirt_color,
@@ -128,12 +130,14 @@ class CropSaver:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
 
-    def save(self, frame: Frame, detection: Detection, when: time.struct_time) -> None:
+    def save(self, frame: Frame, detection: Detection, when: time.struct_time,
+             camera: str = "") -> None:
         crop = crop_box(frame, detection.box)
         if not crop.size:
             return
         stamp = time.strftime("%Y%m%d_%H%M%S", when)
-        path = self.directory / f"person_{detection.track_id}_{stamp}.jpg"
+        prefix = f"{safe_slug(camera)}_" if camera else ""
+        path = self.directory / f"{prefix}person_{detection.track_id}_{stamp}.jpg"
         cv2.imwrite(str(path), crop)
 
 
@@ -193,6 +197,7 @@ class PersonRecorder:
         wardrobe: WardrobeLog | None = None,
         on_record: Callable[[dict], None] | None = None,
         identity_lookup: Callable[[int], object] | None = None,
+        camera: str = "",
     ):
         self.csv_log = csv_log
         self.crop_saver = crop_saver
@@ -204,6 +209,7 @@ class PersonRecorder:
         # track_id -> GlobalInfo from the multi-camera hub (global id + a name
         # another camera recognised), or None when cameras are not joined.
         self.identity_lookup = identity_lookup
+        self.camera = camera  # written in the CSV "camera" column and crop names
         self.appearances = {}
         self.names = {}
         self._name_wait = {}  # track_id -> frames waited for another camera's name
@@ -278,16 +284,17 @@ class PersonRecorder:
         global_id = getattr(info, "gid", None)
         if (not name or name == "unknown") and getattr(info, "name", None):
             name = info.name
-        self.csv_log.write(now, detection, appearance, name, global_id)
-        print(
-            f"Logged ID {detection.track_id} ({name or 'unknown'}) : {appearance}")
+        self.csv_log.write(now, detection, appearance, name, global_id, self.camera)
+        where = f"[{self.camera}] " if self.camera else ""
+        print(f"{where}Logged ID {detection.track_id} ({name or 'unknown'}) : {appearance}")
         if self.crop_saver:
-            self.crop_saver.save(frame, detection, now)
+            self.crop_saver.save(frame, detection, now, self.camera)
         if self.wardrobe and name and name != "unknown":
             self.wardrobe.record(name, appearance, now)
         if self.on_record:
             self.on_record({
                 "time": time.strftime("%Y-%m-%d %H:%M:%S", now),
+                "camera": self.camera,
                 "track_id": detection.track_id,
                 "name": name or "unknown",
                 "shirt_color": appearance.shirt_color,

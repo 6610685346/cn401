@@ -5,8 +5,6 @@ __pycache__/
 
 new/models/
 
-new/output/people.json
-
 # web portal: local database, secret key and HTTPS certificate (never commit)
 web/db.sqlite3
 web/.secret_key

@@ -90,6 +90,7 @@ class CameraSpec:
                 enable_vlm_par=camera.enable_vlm_par,
                 enable_direction=camera.enable_direction,
                 csv_tag=camera.csv_tag,
+                camera=camera.name,
                 save_csv=config.SAVE_CSV,
                 save_crops=config.SAVE_CROPS,
             ),

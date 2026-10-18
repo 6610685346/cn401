@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+import numpy as np
+import torch
 from ultralytics import YOLO
 
 from ..core.geometry import Box, Frame
@@ -38,14 +40,33 @@ class Detection:
 
 
 class PersonDetector:
-    """Runs YOLO tracking on a frame and returns the people it found."""
+    """Runs YOLO tracking on a frame and returns the people it found.
 
-    def __init__(self, model_path: str, conf: float):
+    Uses the NVIDIA GPU whenever PyTorch can see one, in fp16 (half precision)
+    there, which is what keeps several cameras smooth at once.
+    """
+
+    def __init__(self, model_path: str, conf: float, imgsz: int = 640,
+                 device: str | None = None, half: bool = True):
         try:
             self.model = YOLO(model_path)
         except Exception as exc:
             raise RuntimeError(f"Error loading YOLO model '{model_path}'") from exc
         self.conf = conf
+        self.imgsz = imgsz
+        self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.half = half and self.device.startswith("cuda")  # fp16 only on GPU
+        print(f"YOLO device: {self.device}" + (" (fp16)" if self.half else "") + f", imgsz={self.imgsz}")
+        self._warm_up()
+
+    def _options(self) -> dict:
+        return {"imgsz": self.imgsz, "device": self.device,
+                "quantize": 16 if self.half else None, "verbose": False}
+
+    def _warm_up(self) -> None:
+        """The first call pays for CUDA start-up; do it now, not on the first camera frame."""
+        dummy = np.zeros((self.imgsz, self.imgsz, 3), dtype=np.uint8)
+        self.model.predict(dummy, **self._options())
 
     def detect(self, frame: Frame) -> list[Detection]:
         results = self.model.track(
@@ -53,7 +74,7 @@ class PersonDetector:
             persist=True,
             conf=self.conf,
             classes=[PERSON_CLASS_ID],
-            verbose=False,
+            **self._options(),
         )
         if not results or results[0].boxes is None or len(results[0].boxes) == 0:
             return []

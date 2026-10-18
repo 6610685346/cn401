@@ -1,5 +1,7 @@
 """Settings. Edit these, then run:  python connect.py"""
+import os
 
+from urllib.parse import quote
 from pathlib import Path
 
 
@@ -11,9 +13,26 @@ OUTPUT_DIR = PROJECT_DIR / "output"
 
 
 # --------------------------------------------------------------- video source
-# IP Webcam: keep the /video suffix
 
-SOURCE = "rtsp://admin:%23Oung2548@192.168.1.13:554/media/video2"
+# Credentials come from environment variables, so no password is in git:
+#   Windows cmd:  set CAM_PASSWORD=yourpassword      bash:  export CAM_PASSWORD='yourpassword'
+# connect.py runs every camera in CAMERAS (one window each). The desktop app
+# does not use this list: cameras are added on its "กล้อง IP" page.
+
+CAMERA_USER = os.environ.get("CAM_USER", "admin")
+CAMERA_PASSWORD = quote(os.environ.get("CAM_PASSWORD", ""), safe="")  # '#' -> %23
+
+
+def _rtsp(ip: str, path: str = "stream1") -> str:
+    return f"rtsp://{CAMERA_USER}:{CAMERA_PASSWORD}@{ip}:554/{path}"
+
+
+CAMERAS = {
+    "cam1": _rtsp("192.168.137.5X"),
+    "cam2": _rtsp("192.168.137.5X"),   
+}
+
+SOURCE = CAMERAS["cam1"]
 
 
 MAX_READ_FAILURES = 5
@@ -33,7 +52,7 @@ DISPLAY_WIDTH = 1020
 DISPLAY_HEIGHT = 500
 FRAME_SKIP = 1
 WINDOW_NAME = "Person Detection"
-PRINT_MOUSE_POSITION = True
+PRINT_MOUSE_POSITION = False
 
 
 # ----------------------------------------------------------------- models
@@ -41,6 +60,10 @@ PRINT_MOUSE_POSITION = True
 
 MODEL_PATH = str(MODELS_DIR / "yolo11n-pose.pt")
 CONFIDENCE = 0.4
+# YOLO input size: smaller = faster, bigger = finds smaller / farther people.
+# 640 is YOLO's default; 480 was used for two cameras on one laptop GPU.
+YOLO_IMGSZ = 640
+YOLO_HALF = True  # fp16 on an NVIDIA GPU (ignored on CPU)
 
 ENABLE_FACE_DETECTION = True
 FACE_MODEL_PATH = str(MODELS_DIR / "face_detection_yunet_2023mar.onnx")

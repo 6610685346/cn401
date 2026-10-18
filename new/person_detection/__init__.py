@@ -16,4 +16,6 @@ import os
 # FFmpeg options must be set before any module imports cv2, and every
 # submodule is imported through this package, so this is the place.
 os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")  # mute MJPEG "overread" spam
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+# RTSP over TCP, and no extra buffering so the picture stays live (low latency)
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                      "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay")
