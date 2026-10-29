@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import secrets
+from urllib.parse import quote
 from pathlib import Path
 
 import cv2
@@ -16,6 +17,7 @@ from django.contrib.auth.decorators import login_not_required
 from django.http import (FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse,
                          StreamingHttpResponse)
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from person_detection import config
@@ -79,6 +81,7 @@ def dashboard(request):
     return render(request, "cameras/dashboard.html", {
         "cameras": cameras,
         "device": services.device_info(),
+        "storage": services.storage_info(),
         "browser_sessions": services.sessions.count(),
     })
 
@@ -170,6 +173,46 @@ async def camera_mjpeg(request, pk):
                     return
 
     response = StreamingHttpResponse(stream(), content_type="multipart/x-mixed-replace; boundary=frame")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def camera_wall(request):
+    """Several cameras at once (each tile asks for its next picture: frame.jpg)."""
+    cameras = list(Camera.objects.all())
+    for camera in cameras:
+        camera.state = services.workers.snapshot(camera.id)
+    return render(request, "cameras/wall.html", {"cameras": cameras})
+
+
+async def camera_frame(request, pk):
+    """The newest annotated picture of a camera, as one JPEG.
+
+    ?after=<id> waits (up to 2 s) until a picture newer than <id> exists, so a
+    tile that asks again right away gets the next frame, never the same one.
+    One short request per picture, instead of one endless MJPEG stream per
+    camera: a browser opens at most 6 connections to one server, which a wall
+    of MJPEG streams would use up.
+    """
+    worker = services.workers.get(pk)
+    if worker is None:
+        raise Http404("กล้องนี้ไม่ได้รันอยู่")
+    try:
+        after = int(request.GET.get("after", "-1"))
+    except ValueError:
+        after = -1
+    waited = 0.0
+    while (worker.jpeg is None or worker.jpeg_id == after) and waited < 2.0:
+        await asyncio.sleep(0.03)
+        waited += 0.03
+        if services.workers.get(pk) is not worker:  # stopped or restarted
+            break
+    jpeg, frame_id = worker.jpeg, worker.jpeg_id
+    if jpeg is None:
+        response = HttpResponse(status=204)
+    else:
+        response = HttpResponse(jpeg, content_type="image/jpeg")
+        response["X-Frame-Id"] = str(frame_id)
     response["Cache-Control"] = "no-store"
     return response
 
@@ -287,13 +330,40 @@ def settings_page(request):
         "overridden": [k for k in saved if k in system_settings.BY_KEY],
         "settings_path": system_settings.path(),
         "cameras_running": len(services.workers.running_ids()),
+        "gallery": services.gallery.status(),
     })
+
+
+@staff_member_required
+@require_POST
+def gallery_rebuild(request):
+    """Make the missing face vectors of the current face model from the photos."""
+    if services.gallery.start(force=True):
+        messages.success(request, "กำลังสร้างข้อมูลใบหน้าจากรูปที่ลงทะเบียนไว้")
+    else:
+        messages.info(request, "กำลังทำอยู่แล้ว")
+    return redirect("people")
+
+
+def api_gallery_status(request):
+    """Progress of making face vectors for a newly chosen face model."""
+    state = services.gallery.status()
+    if request.GET.get("partial"):
+        if not state:
+            return HttpResponse("")
+        return render(request, "cameras/gallery_status.html", {"gallery": state})
+    return JsonResponse(state or {})
 
 
 def _after_settings_change(request, changed: list[str], done: str) -> None:
     if not changed:
         messages.info(request, "ไม่มีค่าที่เปลี่ยน")
         return
+    if "FACE_RECOGNIZER" in changed:
+        try:  # download the new face model and make everyone's face vector with it
+            services.gallery.start(force=True)
+        except Exception as exc:
+            messages.error(request, f"เตรียมโมเดลใบหน้าไม่สำเร็จ: {exc}")
     if system_settings.needs_restart(changed):
         restarted = 0
         for camera in Camera.objects.filter(pk__in=services.workers.running_ids()):
@@ -371,6 +441,47 @@ def api_calibration(request, pk):
     })
 
 
+# ------------------------------------------------------------------ door line
+@staff_member_required
+def camera_door(request, pk):
+    camera = get_object_or_404(Camera, pk=pk)
+    return render(request, "cameras/door.html", {
+        "camera": camera,
+        "running": services.workers.get(camera.id) is not None,
+        "initial": json.dumps(camera.door_line or None),
+    })
+
+
+@staff_member_required
+@require_POST
+def api_door(request, pk):
+    from person_detection.counting.line import DoorLine
+    camera = get_object_or_404(Camera, pk=pk)
+    try:
+        data = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "ข้อมูลไม่ถูกต้อง"}, status=400)
+    if data.get("clear"):
+        camera.door_line = None
+        camera.save(update_fields=["door_line"])
+    else:
+        try:
+            a, b = data["a"], data["b"]
+            if not all(0 <= float(v) <= 1 for v in (*a, *b)):
+                raise ValueError("จุดต้องอยู่ในภาพ")
+            line = DoorLine(a, b, data.get("inside", "left"))
+        except (KeyError, TypeError, IndexError):
+            return JsonResponse({"error": "ต้องมีจุด 2 จุด"}, status=400)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        camera.door_line = line.to_dict()
+        camera.enable_direction = True  # drawing a door means: count it
+        camera.save(update_fields=["door_line", "enable_direction"])
+    if services.workers.get(camera.id) is not None:
+        services.workers.start(camera)  # restart so the processor uses the new line
+    return JsonResponse({"ok": True, "door_line": camera.door_line, "enabled": camera.enable_direction})
+
+
 def floor_map(request):
     cameras = Camera.objects.all()
     return render(request, "cameras/floor.html", {
@@ -387,6 +498,26 @@ def api_floor(request):
             cameras.append({"name": camera.name, "floor": camera.floor_calibration["floor"],
                             "running": worker is not None and worker.status == "running"})
     return JsonResponse({"people": services.hub.snapshot(), "cameras": cameras})
+
+
+# ------------------------------------------------------------------ presence
+def presence_page(request):
+    """ใครอยู่ตอนนี้: who is inside, in/out counts, hourly chart, recent crossings."""
+    import datetime as dt
+
+    from . import presence
+    date = request.GET.get("date") or presence.today()
+    try:
+        dt.date.fromisoformat(date)
+    except ValueError:
+        raise Http404
+    events, store = presence.day_events(date)
+    context = {"p": presence.summarize(events), "date": date, "is_today": date == presence.today(),
+               "store": store, "cameras_without_door": Camera.objects.filter(door_line__isnull=True).count()
+               if request.user.is_staff else 0}
+    if request.GET.get("partial"):
+        return render(request, "cameras/presence_body.html", context)
+    return render(request, "cameras/presence.html", context)
 
 
 # ------------------------------------------------------------------ history
@@ -423,7 +554,58 @@ def _log_files() -> list[dict]:
     return files
 
 
+def _history_db(request, database):
+    """History read from PostgreSQL (DATABASE_URL set)."""
+    from person_detection.storage.database import log_dates, log_rows
+    dates = log_dates(database)
+    date = request.GET.get("date") or (dates[0] if dates else "")
+    source = request.GET.get("source", "")
+    name_query = request.GET.get("name", "").strip()
+    rows, total, cameras = ([], 0, [])
+    if date:
+        try:
+            rows, total, cameras = log_rows(database, date, source, name_query)
+        except ValueError:
+            raise Http404
+    for row in rows:
+        row["source"] = row["camera"]
+        if row.get("snapshot_path"):
+            row["photo_url"] = f"{reverse('history_photo')}?log={row['id']}"
+    return render(request, "cameras/history.html", {
+        "dates": dates, "date": date, "source": source, "name": request.GET.get("name", ""),
+        "sources": [(c, c) for c in cameras], "from_db": True,
+        "rows": rows, "total": total,
+    })
+
+
+def history_export(request):
+    """One day of the database history as a CSV download."""
+    database = services.factory.database()
+    if database is None:
+        raise Http404
+    from person_detection.storage.database import log_rows
+    date = request.GET.get("date", "")
+    try:
+        rows, _, _ = log_rows(database, date, request.GET.get("source", ""),
+                              request.GET.get("name", "").strip(), limit=None)
+    except ValueError:
+        raise Http404
+    columns = ["timestamp", "camera", "name", "surname", "id_number", "direction", "similarity",
+               "shirt_color", "pants_color", "confidence", "global_id", "track_id"]
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="detections_{date}.csv"'
+    response.write("\ufeff")  # so Excel reads Thai correctly
+    writer = csv.writer(response)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([row.get(c, "") for c in columns])
+    return response
+
+
 def history(request):
+    database = services.factory.database()
+    if database is not None:
+        return _history_db(request, database)
     files = _log_files()
     dates = sorted({f["date"] for f in files}, reverse=True)
     date = request.GET.get("date") or (dates[0] if dates else "")
@@ -440,7 +622,9 @@ def history(request):
                 name = row.get("name") or "-"  # older files have no name column
                 if name_query and name_query not in name.lower():
                     continue
-                rows.append({**row, "name": name, "source": f["source"]})
+                photo = (row.get("snapshot") or "").strip()
+                rows.append({**row, "name": name, "source": f["source"],
+                             "photo_url": f"{reverse('history_photo')}?f={quote(photo)}" if photo else ""})
     rows.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
 
     return render(request, "cameras/history.html", {
@@ -449,6 +633,47 @@ def history(request):
         "day_files": day_files,
         "rows": rows[:500], "total": len(rows),
     })
+
+
+def _crop_path(relative: str) -> Path | None:
+    """A photo under the crops folder (never outside it)."""
+    root = Path(config.CROPS_DIR).resolve()
+    try:
+        path = (root / relative).resolve()
+    except (OSError, ValueError):
+        return None
+    if root not in path.parents or path.suffix.lower() != ".jpg" or not path.is_file():
+        return None
+    return path
+
+
+def history_photo(request):
+    """Photo of one history row: ?log=<detection_logs id> (database) or ?f=<file> (CSV)."""
+    path = None
+    if request.GET.get("log"):
+        database = services.factory.database()
+        if database is None:
+            raise Http404
+        from person_detection.storage.database import DetectionLog
+        try:
+            log_id = int(request.GET["log"])
+        except ValueError:
+            raise Http404
+        with database.Session() as session:
+            row = session.get(DetectionLog, log_id)
+        if row is None or not row.snapshot_path:
+            raise Http404
+        candidate = Path(row.snapshot_path)
+        root = Path(config.CROPS_DIR).resolve()
+        if candidate.is_file() and root in candidate.resolve().parents:
+            path = candidate
+    elif request.GET.get("f"):
+        path = _crop_path(request.GET["f"])
+    if path is None:
+        raise Http404
+    response = FileResponse(open(path, "rb"), content_type="image/jpeg")
+    response["Cache-Control"] = "private, max-age=86400"
+    return response
 
 
 def history_download(request, filename):
@@ -470,18 +695,33 @@ PHOTO_NAME = re.compile(r"^[A-Za-z0-9ก-๙ _.-]+\.(jpe?g|png|webp|bmp)$", re.I
 def people(request):
     db = services.factory.people_db()
     wardrobe = services.factory.wardrobe()
-    enroller = services.enroller()
+    from person_detection.enrollment import photos_of
     entries = []
+    details = {}
+    if hasattr(db, "details"):  # the PostgreSQL gallery knows surname / ID
+        details = {d["name"]: d for d in db.details()}
     for name in sorted(db.names(), key=str.lower):
         days = wardrobe.history(name)
+        extra = details.get(name, {})
         entries.append({
             "name": name,
-            "photos": [p.name for p in enroller.photos_of(name)],
+            "surname": extra.get("surname", ""),
+            "id_number": extra.get("id_number") or "",
+            "photos": [p.name for p in photos_of(config.PHOTOS_DIR, name)],
             "days": sorted(days.items(), reverse=True)[:7],
         })
+    missing = []
+    try:
+        missing = services.gallery.missing()
+    except Exception:
+        pass
     return render(request, "cameras/people.html", {
         "people": entries,
+        "gallery": services.gallery.status(),
+        "face_model": config.FACE_RECOGNIZER,
+        "missing": missing,
         "max_photos": MAX_PHOTOS_PER_UPLOAD,
+        "uses_database": bool(config.DATABASE_URL),
     })
 
 
@@ -503,7 +743,10 @@ def person_enroll(request):
     """Register a new person, or add photos to an existing one."""
     name = request.POST.get("name", "")
     try:
-        result = services.enroller().enroll(name, _uploaded_photos(request))
+        result = services.enroller().enroll(
+            name, _uploaded_photos(request),
+            surname=request.POST.get("surname", "").strip()[:100] or None,
+            id_number=request.POST.get("id_number", "").strip()[:20] or None)
     except EnrollError as exc:
         messages.error(request, str(exc))
         return redirect("people")
@@ -538,7 +781,8 @@ def person_photo(request, name, filename):
     if not PHOTO_NAME.match(filename) or name not in services.factory.people_db().names():
         raise Http404
     try:
-        path = services.enroller().person_dir(name) / filename
+        from person_detection.enrollment import person_dir
+        path = person_dir(config.PHOTOS_DIR, name) / filename
     except EnrollError:
         raise Http404
     if not path.is_file():

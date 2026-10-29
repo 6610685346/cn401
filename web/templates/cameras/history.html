@@ -1,42 +1,75 @@
 {% extends "base.html" %}
+{% load static ui %}
 {% block title %}ประวัติ · CN401{% endblock %}
 {% block content %}
-<h1>ประวัติการตรวจจับ</h1>
-<p class="sub">อ่านจากไฟล์ CSV ใน <span class="mono">new/output/</span> (ทั้งจากแอปและจาก connect.py)</p>
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "database" %} {% if from_db %}PostgreSQL{% else %}ไฟล์ CSV{% endif %}</span>
+    <h1>ประวัติการตรวจจับ</h1>
+    {% if from_db %}<p class="sub">อ่านจากฐานข้อมูล PostgreSQL (ทั้งจากแอปและจาก connect.py) · เวลาเป็นเวลาไทย</p>
+    {% else %}<p class="sub">อ่านจากไฟล์ CSV ใน <span class="mono">new/output/</span> (ทั้งจากแอปและจาก connect.py)</p>{% endif %}
+  </div>
+  <div class="actions">
+    {% if from_db %}{% if date %}<a class="btn" href="{% url 'history_export' %}?date={{ date|urlencode }}&source={{ source|urlencode }}&name={{ name|urlencode }}">{% icon "download" %} CSV ของวันนี้ (ตามตัวกรอง)</a>{% endif %}
+    {% else %}{% for f in day_files %}<a class="btn sm" href="{% url 'history_download' f.file %}">{% icon "download" %} {{ f.source }}</a>{% endfor %}{% endif %}
+  </div>
+</div>
 
-<form class="panel row" method="get" style="margin-bottom:16px; align-items:flex-end">
-  <div style="min-width:160px"><label for="date">วันที่</label>
+<form class="panel filters" method="get">
+  <div class="field"><label for="date">{% icon "calendar" %} วันที่</label>
     <select name="date" id="date" onchange="this.form.submit()">
       {% for d in dates %}<option value="{{ d }}" {% if d == date %}selected{% endif %}>{{ d }}</option>{% empty %}<option>ยังไม่มีข้อมูล</option>{% endfor %}
     </select></div>
-  <div style="min-width:200px"><label for="source">แหล่ง</label>
+  <div class="field"><label for="source">{% icon "cctv" %} แหล่ง</label>
     <select name="source" id="source">
       <option value="">ทั้งหมด</option>
       {% for tag, label in sources %}<option value="{{ tag }}" {% if tag == source %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select></div>
-  <div style="min-width:160px"><label for="name">ชื่อ</label>
-    <input type="search" name="name" id="name" value="{{ name }}" placeholder="เช่น Oung"></div>
-  <button class="btn primary">กรอง</button>
+  <div class="field"><label for="name">{% icon "user" %} ชื่อ</label>
+    <div class="input-icon">{% icon "search" %}<input type="search" name="name" id="name" value="{{ name }}" placeholder="เช่น Oung"></div></div>
+  <button class="btn primary">{% icon "filter" %} กรอง</button>
 </form>
 
 <div class="panel">
-  <div class="row spread">
-    <h2>{{ total }} รายการ{% if total > 500 %} (แสดง 500 ล่าสุด){% endif %}</h2>
-    <div class="row small">ดาวน์โหลด:
-      {% for f in day_files %}<a href="{% url 'history_download' f.file %}">{{ f.source }}</a>{% empty %}-{% endfor %}</div>
+  <div class="panel-head">
+    <h2>{{ total }} รายการ{% if total > 500 %} <span class="small muted">(แสดง 500 ล่าสุด)</span>{% endif %}</h2>
+    {% if date %}<span class="badge accent">{% icon "calendar" %} {{ date }}</span>{% endif %}
   </div>
+  {% if rows %}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>เวลา</th><th>แหล่ง</th><th>ID</th><th>ชื่อ</th><th>เสื้อ</th><th>กางเกง</th><th>ความมั่นใจ</th></tr></thead>
+    <thead><tr><th>รูป</th><th>เวลา</th><th>ชื่อ</th><th>เข้า/ออก</th><th>แหล่ง</th><th>เสื้อ / กางเกง</th><th>ความเหมือนหน้า</th><th>ความมั่นใจ</th><th>ID</th></tr></thead>
     <tbody>
     {% for r in rows %}
-      <tr><td class="mono">{{ r.timestamp }}</td><td>{{ r.source }}</td><td>{{ r.track_id }}</td><td><b>{{ r.name }}</b></td>
-          <td>{{ r.shirt_color }}</td><td>{{ r.pants_color }}</td><td>{{ r.confidence }}</td></tr>
-    {% empty %}
-      <tr><td colspan="7" class="muted">ไม่มีข้อมูล</td></tr>
+      <tr><td class="photo-cell">{% if r.photo_url %}<button type="button" class="thumb-btn" data-photo="{{ r.photo_url }}" title="ดูรูปใหญ่"><img src="{{ r.photo_url }}" alt="รูป {{ r.name }} {{ r.timestamp }}" loading="lazy"></button>{% else %}<span class="thumb-none">{% icon "image-plus" %}</span>{% endif %}</td>
+          <td class="mono">{{ r.timestamp }}</td>
+          <td><div class="person-cell"><span class="mini-avatar{% if r.name == 'unknown' or r.name == '-' %} unknown{% endif %}">{% if r.name == 'unknown' or r.name == '-' %}?{% else %}{{ r.name|initial }}{% endif %}</span>
+            <span><b>{{ r.name }}</b>{% if r.surname %} {{ r.surname }}{% endif %}{% if r.id_number %}<br><span class="small muted mono">{{ r.id_number }}</span>{% endif %}</span></div></td>
+          <td>{% if r.direction == "in" %}<span class="badge in">{% icon "arrow-right-to-line" %} เข้า</span>{% elif r.direction == "out" %}<span class="badge out">{% icon "arrow-left-from-line" %} ออก</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{{ r.source }}</td>
+          <td class="small">{{ r.shirt_color|default:"-" }} / {{ r.pants_color|default:"-" }}</td>
+          <td>{{ r.similarity|default:"-" }}</td><td>{{ r.confidence }}</td><td class="muted">{{ r.track_id }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  {% else %}
+  <div class="empty-state">
+    <img src="{% static 'img/empty-history.svg' %}" alt="">
+    <h2>ไม่มีข้อมูล</h2>
+    <p>ยังไม่มีประวัติในวันที่และตัวกรองที่เลือก ลองเปลี่ยนวันที่หรือล้างคำค้นหา</p>
+  </div>
+  {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<div class="lightbox" id="lightbox" hidden><img alt="รูปจากประวัติ"><span class="small">คลิกที่ใดก็ได้เพื่อปิด</span></div>
+<script>
+(function () {
+  const box = document.getElementById("lightbox"), big = box.querySelector("img");
+  document.querySelectorAll(".thumb-btn").forEach((b) => b.addEventListener("click", () => { big.src = b.dataset.photo; box.hidden = false; }));
+  box.addEventListener("click", () => { box.hidden = true; big.removeAttribute("src"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") box.hidden = true; });
+})();
+</script>
 {% endblock %}

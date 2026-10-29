@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load static ui %}
+{% block title %}เส้นประตู · {{ camera.name }} · CN401{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "door-open" %} นับเข้า/ออก</span>
+    <h1>เส้นประตู: {{ camera.name }}</h1>
+    <p class="sub">วาดเส้นตรงพาดประตูบนภาพ แล้วเลือกว่าด้านไหนคือ "ข้างใน" คนที่เท้าข้ามเส้นจากข้างนอกเข้ามาจะนับเป็น <b>เข้า</b> ข้ามกลับออกไปนับเป็น <b>ออก</b></p>
+  </div>
+  <div class="actions"><a class="btn" href="{% url 'camera_live' camera.id %}">{% icon "arrow-left" %} กลับไปหน้ากล้อง</a></div>
+</div>
+
+{% if not running %}<div class="notice">กล้องนี้หยุดอยู่ ต้องกด "เริ่ม" ก่อนจึงจะมีภาพให้วาด</div>{% endif %}
+<div class="notice" id="msg" hidden></div>
+
+<div class="layout">
+  <div>
+    <div class="stage calib" id="stage">
+      <img id="snap" alt="ภาพล่าสุดจาก {{ camera.name }}" data-src="{% url 'camera_snapshot' camera.id %}">
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sm" id="refresh">{% icon "refresh-cw" %} ภาพใหม่</button>
+      <span class="small muted">คลิก 2 จุดบนภาพเพื่อวาดเส้น · ลากจุดสีส้มเพื่อขยับ · ลูกศรสีเขียวชี้เข้าข้างใน</span>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "door-open" %} ตั้งค่าเส้น</h2>
+        <span class="badge {% if camera.door_line %}on{% endif %}" id="state">{% if camera.door_line %}มีเส้นแล้ว{% else %}ยังไม่มีเส้น{% endif %}</span></div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" id="flip">{% icon "refresh-cw" %} สลับด้านข้างใน</button>
+        <button class="btn" id="redraw">{% icon "crosshair" %} วาดใหม่</button>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="save">{% icon "save" %} บันทึกและเริ่มนับ</button>
+        <button class="btn danger" id="clear">{% icon "trash-2" %} ลบเส้น</button>
+      </div>
+      <p class="small muted" style="margin:12px 0 0">บันทึกแล้วกล้องจะรีสตาร์ทเพื่อใช้เส้นใหม่ (ภาพหายไปไม่กี่วินาที) และเปิด "นับคนเดินเข้า/ออก" ให้อัตโนมัติ</p>
+    </div>
+    <details class="tips small" open>
+      <summary>วาดอย่างไรให้นับแม่น</summary>
+      <ol class="steps">
+        <li>วาดเส้นบน<b>พื้น</b>ตรงประตู (ระบบดูตำแหน่งเท้า ไม่ใช่หัว)</li>
+        <li>ให้เส้นยาวเท่าความกว้างประตู คนที่เดินผ่านเลยปลายเส้นไปไกลจะไม่ถูกนับ</li>
+        <li>เลือกตำแหน่งที่คนเดินผ่านแล้วเห็นเท้าชัด ไม่โดนโต๊ะหรือของบัง</li>
+        <li>ลองให้คนเดินเข้า-ออกดู แล้วเช็กในหน้า "ใครอยู่ตอนนี้" ถ้านับกลับด้านให้กด "สลับด้านข้างใน"</li>
+      </ol>
+    </details>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  window.DOOR = { saveUrl: "{% url 'api_door' camera.id %}", csrf: "{{ csrf_token }}", initial: {{ initial|safe }} };
+</script>
+<script src="{% static 'door.js' %}"></script>
+{% endblock %}

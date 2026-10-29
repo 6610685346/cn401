@@ -1,9 +1,15 @@
 {% extends "base.html" %}
+{% load ui %}
 {% block title %}{{ title }} · CN401{% endblock %}
 {% block content %}
-<h1>{{ title }}</h1>
-<p class="sub">กล้องความละเอียดเท่าไรก็ได้ (480p ถึง 4K, แนวตั้งก็ได้) ระบบจะปรับขนาดให้เอง</p>
-<div class="panel" style="max-width:720px">
+<div class="page-head">
+  <div>
+    <a class="small" href="{% url 'dashboard' %}">{% icon "arrow-left" %} กล้องทั้งหมด</a>
+    <h1 style="margin-top:6px">{{ title }}</h1>
+    <p class="sub">กล้องความละเอียดเท่าไรก็ได้ (480p ถึง 4K, แนวตั้งก็ได้) ระบบจะปรับขนาดให้เอง</p>
+  </div>
+</div>
+<div class="panel" style="max-width:760px">
   <form method="post" novalidate>
     {% csrf_token %}
     {% for field in form %}
@@ -17,15 +23,15 @@
         {% for e in field.errors %}<div class="err">{{ e }}</div>{% endfor %}
       </div>
     {% endfor %}
-    <div class="row">
-      <button class="btn primary" type="submit">บันทึก</button>
+    <div class="row" style="margin-top:6px">
+      <button class="btn primary" type="submit">{% icon "save" %} บันทึก</button>
       <a class="btn" href="{% url 'dashboard' %}">ยกเลิก</a>
     </div>
   </form>
   {% if camera %}
-  <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
-  <form method="post" action="{% url 'camera_delete' camera.id %}" onsubmit="return confirm('ลบกล้อง {{ camera.name|escapejs }}?')">
-    {% csrf_token %}<button class="btn danger">ลบกล้องนี้</button>
+  <hr>
+  <form method="post" action="{% url 'camera_delete' camera.id %}" class="row" onsubmit="return confirm('ลบกล้อง {{ camera.name|escapejs }}?')">
+    {% csrf_token %}<button class="btn danger">{% icon "trash-2" %} ลบกล้องนี้</button>
     <span class="small muted">ไฟล์ประวัติ CSV ของกล้องนี้จะยังอยู่</span>
   </form>
   {% endif %}

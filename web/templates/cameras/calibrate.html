@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static ui %}
 {% block title %}ปรับเทียบพื้น · {{ camera.name }} · CN401{% endblock %}
 {% block content %}
-<div class="row spread">
+<div class="page-head">
   <div>
+    <span class="eyebrow">{% icon "crosshair" %} ปรับเทียบพื้น</span>
     <h1>ปรับเทียบพื้น: {{ camera.name }}</h1>
     <p class="sub">บอกระบบว่าจุดไหนในภาพคือจุดไหนบนพื้นจริง (หน่วยเมตร) เพื่อให้กล้องหลายตัวรู้ว่ากำลังเห็นคนคนเดียวกัน</p>
   </div>
-  <a class="btn" href="{% url 'camera_live' camera.id %}">กลับไปหน้ากล้อง</a>
+  <div class="actions"><a class="btn" href="{% url 'camera_live' camera.id %}">{% icon "arrow-left" %} กลับไปหน้ากล้อง</a></div>
 </div>
 
 {% if not running %}
@@ -22,29 +23,29 @@
       <canvas id="overlay"></canvas>
     </div>
     <div class="row" style="margin-top:10px">
-      <button class="btn" id="refresh">ภาพใหม่</button>
+      <button class="btn sm" id="refresh">{% icon "refresh-cw" %} ภาพใหม่</button>
       <span class="small muted">คลิกบนภาพเพื่อเพิ่มจุด · ลากจุดเพื่อขยับ · เส้นตารางสีเขียวคือพื้น 1×1 เมตรที่ระบบเข้าใจ (ควรวางตรงกับพื้นจริง)</span>
     </div>
   </div>
   <div class="panel">
-    <h2>จุดบนพื้น</h2>
+    <div class="panel-head"><h2>{% icon "crosshair" %} จุดบนพื้น</h2></div>
     <table class="calib-table">
       <thead><tr><th>#</th><th>X (ม.)</th><th>Y (ม.)</th><th class="small">คลาด (ม.)</th><th></th></tr></thead>
       <tbody id="rows"><tr><td colspan="5" class="muted small">ยังไม่มีจุด คลิกบนภาพ</td></tr></tbody>
     </table>
     <p class="small" id="summary"></p>
     <div class="row" style="margin-top:8px">
-      <button class="btn primary" id="save">บันทึก</button>
-      <button class="btn danger" id="clear">ลบการปรับเทียบ</button>
+      <button class="btn primary" id="save">{% icon "save" %} บันทึก</button>
+      <button class="btn danger" id="clear">{% icon "trash-2" %} ลบการปรับเทียบ</button>
     </div>
     {% if others %}
     <h2 style="margin-top:18px">พิกัดที่กล้องอื่นใช้</h2>
     <p class="small muted">ถ้าจุดเดียวกันอยู่ในภาพนี้ด้วย ให้ใส่เมตรเท่ากัน</p>
     {% for o in others %}<p class="small"><b>{{ o.name }}</b>: {% for p in o.floor %}<span class="mono">({{ p.0 }}, {{ p.1 }})</span> {% endfor %}</p>{% endfor %}
     {% endif %}
-    <details class="small" style="margin-top:14px" open>
+    <details class="small tips" style="margin-top:16px" open>
       <summary>วิธีปรับเทียบ</summary>
-      <ol>
+      <ol class="steps">
         <li>แปะเทป 4 จุดขึ้นไปบนพื้นในบริเวณที่กล้องเห็น ให้กระจายเป็นสี่เหลี่ยมใหญ่ ๆ (เช่น 2×3 ม.)</li>
         <li>เลือกมุมห้องหรือจุดหนึ่งเป็น (0, 0) แล้ววัดระยะ X (ไปทางขวา) และ Y (ไปข้างหน้า) ของแต่ละจุดเป็นเมตร</li>
         <li>คลิกจุดเทปในภาพตามลำดับ แล้วพิมพ์เมตรของจุดนั้นในแถวเดียวกัน</li>

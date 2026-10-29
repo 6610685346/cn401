@@ -1,78 +1,120 @@
 {% extends "base.html" %}
+{% load static ui %}
 {% block title %}คนที่ลงทะเบียน · CN401{% endblock %}
 {% block content %}
-<h1>คนที่ลงทะเบียนใบหน้า</h1>
-<p class="sub">กล้องที่รันอยู่จะจำคนที่ลงทะเบียนใหม่ได้ทันที ไม่ต้องรีสตาร์ท
-  (คนที่อยู่หน้ากล้องตอนลงทะเบียนพอดีจะเริ่มขึ้นชื่อหลังเดินออกแล้วเข้ามาใหม่)</p>
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "scan-face" %} จดจำใบหน้า</span>
+    <h1>คนที่ลงทะเบียนใบหน้า</h1>
+    <p class="sub">กล้องที่รันอยู่จะจำคนที่ลงทะเบียนใหม่ได้ทันที ไม่ต้องรีสตาร์ท
+      (คนที่อยู่หน้ากล้องตอนลงทะเบียนพอดีจะเริ่มขึ้นชื่อหลังเดินออกแล้วเข้ามาใหม่)</p>
+  </div>
+  <div class="actions"><span class="badge accent">{% icon "users" %} {{ people|length }} คน</span>
+    <span class="badge" title="โมเดลจดจำใบหน้าที่ใช้อยู่ (เปลี่ยนได้ในหน้าตั้งค่าระบบ)">{% icon "cpu" %} {{ face_model }}</span></div>
+</div>
+{% if gallery and gallery.running %}
+<div class="panel" style="margin-bottom:18px">{% include "cameras/gallery_status.html" %}
+  <p class="small muted" style="margin:8px 0 0">รายชื่อด้านล่างจะครบเมื่อเสร็จ (รีเฟรชหน้านี้)</p></div>
+{% elif missing %}
+<div class="panel" style="margin-bottom:18px"><p class="small" style="margin:0">{% icon "triangle-alert" %}
+  ยังไม่มีข้อมูลใบหน้าของโมเดล <b>{{ face_model }}</b> สำหรับ: <b>{{ missing|join:", " }}</b>
+  </p>{% if user.is_staff %}<form method="post" action="{% url 'gallery_rebuild' %}" style="margin-top:10px">{% csrf_token %}
+  <button class="btn sm">{% icon "refresh-cw" %} สร้างจากรูปที่ลงทะเบียนไว้</button></form>{% endif %}</div>
+{% endif %}
 
 {% if user.is_staff %}
-<div class="panel" style="margin-bottom:18px">
-  <h2>ลงทะเบียนคนใหม่</h2>
+<div class="panel" style="margin-bottom:22px">
+  <div class="panel-head"><h2>{% icon "image-plus" %} ลงทะเบียนคนใหม่</h2></div>
   <form method="post" action="{% url 'person_enroll' %}" enctype="multipart/form-data" id="enroll-form">
     {% csrf_token %}
-    <div class="row" style="align-items:flex-start">
-      <div class="field" style="flex:1; min-width:220px">
-        <label for="name">ชื่อ</label>
-        <input type="text" name="name" id="name" maxlength="40" required placeholder="เช่น Arm" autocomplete="off" list="known-names">
-        <datalist id="known-names">{% for p in people %}<option value="{{ p.name }}">{% endfor %}</datalist>
-        <div class="help">ถ้าใส่ชื่อที่มีอยู่แล้ว รูปจะถูก "เพิ่ม" ให้คนนั้น</div>
+    <div class="row" style="align-items:flex-start;gap:22px">
+      <div style="flex:1; min-width:240px">
+        <div class="field">
+          <label for="name">ชื่อ</label>
+          <input type="text" name="name" id="name" maxlength="40" required placeholder="เช่น Arm" autocomplete="off" list="known-names">
+          <datalist id="known-names">{% for p in people %}<option value="{{ p.name }}">{% endfor %}</datalist>
+          <div class="help">ถ้าใส่ชื่อที่มีอยู่แล้ว รูปจะถูก "เพิ่ม" ให้คนนั้น</div>
+        </div>
+        {% if uses_database %}
+        <div class="field"><label for="surname">นามสกุล <span class="muted small">(ไม่บังคับ)</span></label>
+          <input type="text" name="surname" id="surname" maxlength="100" autocomplete="off"></div>
+        <div class="field"><label for="id_number">รหัสนักศึกษา / พนักงาน <span class="muted small">(ไม่บังคับ, ห้ามซ้ำ)</span></label>
+          <input type="text" name="id_number" id="id_number" maxlength="20" autocomplete="off"></div>
+        {% endif %}
+        <details class="tips small">
+          <summary>รูปแบบไหนได้ผลดี</summary>
+          <ul>
+            <li>หน้าชัด เห็นทั้งหน้า ไม่ใส่แมสก์/แว่นดำ แสงพอ</li>
+            <li>หลายมุมนิดหน่อย (ตรง, เอียงซ้าย, เอียงขวา) และหลายวัน/หลายแสงยิ่งดี</li>
+            <li>รูปที่มีหลายคน ระบบจะใช้หน้าที่ใหญ่ที่สุด และโชว์ให้ดูว่าใช้หน้าไหน</li>
+            <li>ความละเอียดเท่าไรก็ได้ รูปแนวตั้งจากมือถือก็ได้ (ไฟล์ HEIC ของ iPhone ให้แปลงเป็น JPG ก่อน)</li>
+          </ul>
+        </details>
       </div>
-      <div class="field" style="flex:2; min-width:260px">
+      <div style="flex:1.4; min-width:280px">
         <label for="photos">รูปหน้า (แนะนำ 3–6 รูป, สูงสุด {{ max_photos }} รูป)</label>
         <div class="drop" id="drop">
           <input type="file" name="photos" id="photos" accept="image/jpeg,image/png,image/webp" multiple required>
-          <div class="small" style="margin-top:6px">ลากรูปมาวางตรงนี้ได้ · บนมือถือกดเพื่อถ่ายรูปได้เลย</div>
+          {% icon "upload" %}
+          <div><b>ลากรูปมาวาง</b> หรือคลิกเพื่อเลือกไฟล์</div>
+          <div class="small" style="margin-top:2px">JPG · PNG · WEBP · บนมือถือกดเพื่อถ่ายรูปได้เลย</div>
         </div>
         <div class="previews" id="previews"></div>
       </div>
     </div>
-    <details class="small" style="margin-bottom:12px">
-      <summary>รูปแบบไหนได้ผลดี</summary>
-      <ul>
-        <li>หน้าชัด เห็นทั้งหน้า ไม่ใส่แมสก์/แว่นดำ แสงพอ</li>
-        <li>หลายมุมนิดหน่อย (ตรง, เอียงซ้าย, เอียงขวา) และหลายวัน/หลายแสงยิ่งดี</li>
-        <li>รูปที่มีหลายคน ระบบจะใช้หน้าที่ใหญ่ที่สุด และโชว์ให้ดูว่าใช้หน้าไหน</li>
-        <li>ความละเอียดเท่าไรก็ได้ รูปแนวตั้งจากมือถือก็ได้ (ไฟล์ HEIC ของ iPhone ให้แปลงเป็น JPG ก่อน)</li>
-      </ul>
-    </details>
-    <button class="btn primary" type="submit" id="enroll-btn">ลงทะเบียน</button>
-    <span class="small muted" id="enroll-wait" hidden>กำลังประมวลผลรูป…</span>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" type="submit" id="enroll-btn">{% icon "scan-face" %} ลงทะเบียน</button>
+      <span class="small muted" id="enroll-wait" hidden>กำลังประมวลผลรูป…</span>
+    </div>
   </form>
 </div>
 {% endif %}
 
-<div class="grid">
+<div class="people-grid">
 {% for p in people %}
-  <div class="panel">
-    <div class="row spread"><h2 style="margin:0">{{ p.name }}</h2>
-      <span class="small muted">{{ p.photos|length }} รูป</span></div>
-    {% if p.photos %}
-      <div class="thumbs">{% for f in p.photos|slice:":8" %}<img src="{% url 'person_photo' p.name f %}" alt="รูปของ {{ p.name }}" loading="lazy">{% endfor %}</div>
-    {% else %}
-      <p class="small muted">ไม่มีรูปเก็บไว้ในเครื่อง (ลงทะเบียนด้วยวิธีอื่น) — ถ้าเพิ่มรูป ระบบจะคำนวณจากรูปใหม่เท่านั้น</p>
-    {% endif %}
-    {% if p.days %}
-    <table><thead><tr><th>วันที่</th><th>ชุดที่ใส่บ่อยสุด</th></tr></thead><tbody>
-      {% for day, combo in p.days %}<tr><td class="mono">{{ day }}</td><td>{{ combo }}</td></tr>{% endfor %}
-    </tbody></table>
-    {% endif %}
+  <div class="panel person-card">
+    <div class="person-head">
+      {% if p.photos %}<img class="person-photo" src="{% url 'person_photo' p.name p.photos.0 %}" alt="รูปของ {{ p.name }}">
+      {% else %}<div class="person-photo placeholder">{{ p.name|initial }}</div>{% endif %}
+      <div style="min-width:0">
+        <h2>{{ p.name }}{% if p.surname %} <span class="muted" style="font-weight:400">{{ p.surname }}</span>{% endif %}</h2>
+        {% if p.id_number %}<div class="small muted mono">{{ p.id_number }}</div>{% endif %}
+        <span class="badge">{% icon "image-plus" %} {{ p.photos|length }} รูป</span>
+      </div>
+    </div>
+    <div class="person-body">
+      {% if p.photos %}
+        <div class="thumbs">{% for f in p.photos|slice:":8" %}<img src="{% url 'person_photo' p.name f %}" alt="รูปของ {{ p.name }}" loading="lazy">{% endfor %}</div>
+      {% else %}
+        <p class="small muted">ไม่มีรูปเก็บไว้ในเครื่อง (ลงทะเบียนด้วยวิธีอื่น) — ถ้าเพิ่มรูป ระบบจะคำนวณจากรูปใหม่เท่านั้น</p>
+      {% endif %}
+      {% if p.days %}
+      <table><thead><tr><th>วันที่</th><th>ชุดที่ใส่บ่อยสุด</th></tr></thead><tbody>
+        {% for day, combo in p.days %}<tr><td class="mono">{{ day }}</td><td>{{ combo }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
     {% if user.is_staff %}
-    <div class="row" style="margin-top:10px">
+    <div class="person-actions">
       <form method="post" action="{% url 'person_enroll' %}" enctype="multipart/form-data" class="inline add-photos">
         {% csrf_token %}<input type="hidden" name="name" value="{{ p.name }}">
-        <label class="btn" style="margin:0;font-weight:400">เพิ่มรูป
+        <label class="btn sm" style="margin:0">{% icon "image-plus" %} เพิ่มรูป
           <input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="this.form.submit()"></label>
       </form>
-      <form method="post" action="{% url 'person_delete' %}" class="inline"
+      <form method="post" action="{% url 'person_delete' %}" class="inline" style="margin-left:auto"
             onsubmit="return confirm('ลบ {{ p.name|escapejs }} และรูปทั้งหมดของเขา?')">
         {% csrf_token %}<input type="hidden" name="name" value="{{ p.name }}">
-        <button class="btn danger">ลบ</button>
+        <button class="btn sm danger">{% icon "trash-2" %} ลบ</button>
       </form>
     </div>
     {% endif %}
   </div>
 {% empty %}
-  <div class="panel"><p class="muted">ยังไม่มีใครลงทะเบียน{% if user.is_staff %} — ใช้ฟอร์มด้านบนได้เลย{% endif %}</p></div>
+  <div class="panel empty-state" style="grid-column:1/-1">
+    <img src="{% static 'img/empty-people.svg' %}" alt="">
+    <h2>ยังไม่มีใครลงทะเบียน</h2>
+    <p>{% if user.is_staff %}ใช้ฟอร์มด้านบนได้เลย อัปโหลดรูปหน้า 3–6 รูปต่อคน{% else %}ผู้ดูแลระบบเป็นผู้ลงทะเบียนใบหน้า{% endif %}</p>
+  </div>
 {% endfor %}
 </div>
 {% endblock %}

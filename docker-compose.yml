@@ -1,0 +1,26 @@
+# PostgreSQL 16 for the person detection database (see DATABASE.md).
+#
+#   1. set DB_PASSWORD=pick-a-password        (Windows cmd; bash: export DB_PASSWORD=...)
+#   2. docker compose up -d                    (first time downloads the image)
+#   3. set DATABASE_URL=postgresql+psycopg://postgres:%DB_PASSWORD%@localhost:5432/person_detection
+#   4. cd new  &&  python register.py init
+#
+# The port is only opened on this computer (127.0.0.1), not to the LAN.
+services:
+  db:
+    image: postgres:16
+    container_name: person_detection_db
+    environment:
+      POSTGRES_DB: person_detection
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD first}
+      TZ: Asia/Bangkok
+      PGTZ: Asia/Bangkok
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:

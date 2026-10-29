@@ -327,11 +327,11 @@ class SystemSettingsTest(PortalTestBase):
         services.workers.start(camera)
         before = services.workers.get(camera.id)
         response = self.client.post("/settings/", self.form_data(**{
-            "FRAME_SKIP": 3, "CONFIDENCE": 0.5, "hub.MATCH_RADIUS_M": 1.2, "SAVE_CROPS": True}), follow=True)
+            "FRAME_SKIP": 3, "CONFIDENCE": 0.5, "hub.MATCH_RADIUS_M": 1.2, "SAVE_CROPS": False}), follow=True)
         html = response.content.decode()
         self.assertIn("บันทึกแล้ว", html)
         self.assertIn("รีสตาร์ทกล้อง 1 ตัว", html)  # CONFIDENCE needs new models
-        self.assertEqual((config.FRAME_SKIP, config.CONFIDENCE, config.SAVE_CROPS), (3, 0.5, True))
+        self.assertEqual((config.FRAME_SKIP, config.CONFIDENCE, config.SAVE_CROPS), (3, 0.5, False))
         self.assertEqual(hub_module.MATCH_RADIUS_M, 1.2)
         self.assertIsNot(services.workers.get(camera.id), before)
         saved = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
@@ -340,7 +340,7 @@ class SystemSettingsTest(PortalTestBase):
         self.assertEqual(saved["_meta"]["updated_by"], "boss")
         # connect.py reads the same file at start-up (only its own keys)
         self.assertEqual(config.apply_saved_settings(config.SETTINGS_PATH),
-                         {"FRAME_SKIP": 3, "CONFIDENCE": 0.5, "SAVE_CROPS": True})
+                         {"FRAME_SKIP": 3, "CONFIDENCE": 0.5, "SAVE_CROPS": False})
 
     def test_hub_only_change_needs_no_restart(self):
         self.client.force_login(self.admin)

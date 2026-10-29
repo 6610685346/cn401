@@ -1,0 +1,20 @@
+{% load ui %}{% with g=gallery %}
+<div class="row spread">
+  <h2 style="margin:0">{% if g.running %}{% icon "loader-circle" "spin" %}{% elif g.phase == "error" %}{% icon "circle-x" %}{% else %}{% icon "circle-check" %}{% endif %}
+    {% if g.phase == "download" %}กำลังดาวน์โหลดโมเดลใบหน้า{% elif g.phase == "faces" %}กำลังสร้างข้อมูลใบหน้าด้วยโมเดลใหม่{% elif g.phase == "error" %}เตรียมโมเดลใบหน้าไม่สำเร็จ{% else %}โมเดลใบหน้าพร้อมใช้{% endif %}</h2>
+  <span class="badge accent">{{ g.model }}</span>
+</div>
+{% if g.phase == "download" %}
+  <div class="progress" style="margin:10px 0"><div style="width:{% if g.total_mb %}{% widthratio g.downloaded_mb g.total_mb 100 %}{% else %}5{% endif %}%"></div></div>
+  <p class="small muted" style="margin:0">{{ g.downloaded_mb }} / {{ g.total_mb|default:"?" }} MB · ดาวน์โหลดครั้งเดียว เก็บไว้ที่ new/models/insightface/</p>
+{% elif g.phase == "faces" %}
+  <div class="progress" style="margin:10px 0"><div style="width:{% if g.total %}{% widthratio g.done g.total 100 %}{% else %}0{% endif %}%"></div></div>
+  <p class="small muted" style="margin:0">{{ g.done }} / {{ g.total }} คน{% if g.current %} · ตอนนี้: {{ g.current }}{% endif %} · ใช้รูปที่ลงทะเบียนไว้ ชื่อและรหัสของแต่ละคนไม่เปลี่ยน</p>
+{% elif g.phase == "error" %}
+  <p class="small err" style="margin:8px 0 0">{{ g.error }} — ระบบยังใช้งานได้ แต่ยังจำหน้าด้วยโมเดลนี้ไม่ได้ ลองบันทึกการตั้งค่าอีกครั้ง หรือเปลี่ยนกลับเป็น sface</p>
+{% else %}
+  <p class="small muted" style="margin:8px 0 0">สร้างข้อมูลใบหน้าใหม่ {{ g.added|length }} คน{% if g.finished_at %} เมื่อ {{ g.finished_at }}{% endif %}</p>
+{% endif %}
+{% if g.no_photos %}<p class="small" style="margin:8px 0 0">{% icon "triangle-alert" %} ไม่มีรูปลงทะเบียน ต้องลงทะเบียนใหม่ในหน้า "คนที่ลงทะเบียน": <b>{{ g.no_photos|join:", " }}</b></p>{% endif %}
+{% if g.failed %}<p class="small" style="margin:8px 0 0">{% icon "triangle-alert" %} ทำไม่สำเร็จ: {% for name, why in g.failed.items %}<b>{{ name }}</b> ({{ why }}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% endwith %}

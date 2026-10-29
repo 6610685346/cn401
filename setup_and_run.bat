@@ -43,10 +43,25 @@ if not defined PY goto :no_python
 %PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
 if errorlevel 1 goto :no_python
 
-if exist "%VENV%\Scripts\python.exe" goto :venv_ready
+rem A .venv is only usable when python.exe AND activate.bat are there. One that
+rem was cut off while it was being made (closed window, antivirus) has python.exe
+rem but no activate.bat / pip: delete it and make it again.
+if exist "%VENV%\Scripts\python.exe" if exist "%VENV%\Scripts\activate.bat" goto :venv_ready
+if exist "%VENV%" (
+    echo       .venv is incomplete ^(no Scripts\activate.bat^) - making it again ...
+    rmdir /s /q "%VENV%"
+    if exist "%VENV%" (
+        echo       Could not delete .venv. Close programs using it, delete the .venv folder, then run this again.
+        goto :fail
+    )
+)
 echo       Creating virtual environment in .venv ...
 %PY% -m venv "%VENV%"
 if errorlevel 1 goto :fail
+if not exist "%VENV%\Scripts\activate.bat" (
+    echo       Python could not create .venv ^(no activate.bat^). Try: %PY% -m venv --clear .venv
+    goto :fail
+)
 
 :venv_ready
 call "%VENV%\Scripts\activate.bat"
@@ -125,7 +140,7 @@ rem ------------------------------------------------------------------- menu
 :menu
 echo.
 echo   1  Desktop app                (cameras, people, settings - main program)
-echo   2  Run detection              (connect.py, one camera in an OpenCV window)
+echo   2  Run detection              (connect.py, all cameras in config.py, one window each)
 echo   3  Add a person               (capture face photos, then enroll)
 echo   4  Enroll from saved photos   (new\models\photos\NAME)
 echo   5  LAN history page only      (when the desktop app is closed)

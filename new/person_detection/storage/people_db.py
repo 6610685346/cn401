@@ -62,7 +62,9 @@ class PeopleDB:
             tmp.replace(self.path)  # atomic: readers never see half a file
             self._mtime = self._file_mtime()
 
-    def enroll(self, name: str, embeddings: list[np.ndarray]) -> None:
+    def enroll(self, name: str, embeddings: list[np.ndarray], image_paths=None,
+               surname: str | None = None, id_number: str | None = None) -> None:
+        # image_paths / surname / id_number are only kept by the SQL version.
         if not embeddings:
             raise ValueError(f"No embeddings to enroll for '{name}'")
         mean = np.mean(np.stack(embeddings), axis=0)
@@ -83,3 +85,27 @@ class PeopleDB:
     def gallery(self) -> dict[str, np.ndarray]:
         self.reload_if_changed()
         return self._people
+
+    def person_id(self, name: str | None) -> int | None:
+        return None  # people.json has no ids
+
+
+def people_db_path(model: str | None = None) -> Path:
+    """people.json for SFace (as before), people_<model>.json for other face models."""
+    from .. import config
+
+    model = model or config.FACE_RECOGNIZER
+    base = Path(config.PEOPLE_DB_PATH)
+    return base if model == "sface" else base.with_name(f"{base.stem}_{model}{base.suffix}")
+
+
+def open_people_db(model: str | None = None):
+    """The face gallery the settings ask for: PostgreSQL when DATABASE_URL is
+    set, otherwise people.json. For command-line tools (the web portal and
+    connect.py share one through PipelineFactory)."""
+    from .. import config
+
+    if config.DATABASE_URL:
+        from .database import Database, SqlPeopleDB
+        return SqlPeopleDB(Database(config.DATABASE_URL, config.DB_TIMEZONE), model or config.FACE_RECOGNIZER)
+    return PeopleDB(people_db_path(model))

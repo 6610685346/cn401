@@ -1,0 +1,101 @@
+{% load ui %}
+{% if not p.crossings %}
+<div class="notice info row" style="align-items:flex-start;gap:12px">{% icon "door-open" "i-lg" %}
+  <div><b>{% if is_today %}ยังไม่มีการเดินเข้า-ออกวันนี้{% else %}ไม่มีการเดินเข้า-ออกในวันนี้{% endif %}</b>
+    <div class="small">ระบบนับเข้า/ออกเฉพาะกล้องที่มี<b>เส้นประตู</b>และเปิด "นับคนเดินเข้า/ออก"
+      {% if user.is_staff and cameras_without_door %}· ยังมีกล้อง {{ cameras_without_door }} ตัวที่ยังไม่วาดเส้น — ไปที่ <a href="{% url 'dashboard' %}">กล้อง IP</a> แล้วกด "เส้นประตู"{% endif %}
+      {% if p.people_today %}· ด้านล่างคือคนที่กล้องเห็นวันนี้{% endif %}</div></div>
+</div>
+{% endif %}
+
+<div class="kpis presence-kpis">
+  <div class="kpi kpi-hero"><div class="kpi-icon ok">{% icon "users" "i-lg" %}</div>
+    <div><div class="kpi-label">{% if is_today %}อยู่ข้างในตอนนี้{% else %}อยู่ข้างในตอนสิ้นวัน{% endif %}</div>
+      <div class="kpi-value big">{{ p.inside_total }} <small>คน</small></div>
+      <div class="small muted">รู้ชื่อ {{ p.inside_named|length }} · ไม่ทราบชื่อ {{ p.inside_unknown }}</div></div></div>
+  <div class="kpi"><div class="kpi-icon cyan">{% icon "arrow-right-to-line" "i-lg" %}</div>
+    <div><div class="kpi-label">เดินเข้า</div><div class="kpi-value">{{ p.ins }}</div></div></div>
+  <div class="kpi"><div class="kpi-icon warn">{% icon "arrow-left-from-line" "i-lg" %}</div>
+    <div><div class="kpi-label">เดินออก</div><div class="kpi-value">{{ p.outs }}</div></div></div>
+  <div class="kpi"><div class="kpi-icon">{% icon "scan-face" "i-lg" %}</div>
+    <div><div class="kpi-label">คนที่รู้ชื่อ เห็นวันนี้</div><div class="kpi-value">{{ p.people_today }}</div></div></div>
+</div>
+
+<div class="layout presence-layout">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "door-open" %} อยู่ข้างใน</h2><span class="badge on">{{ p.inside_named|length }} คนที่รู้ชื่อ</span></div>
+      {% if p.inside_named %}
+      <div class="who-grid">
+        {% for x in p.inside_named %}
+        <div class="who-card">
+          {% if x.photo_url %}<button type="button" class="who-photo" data-photo="{{ x.photo_url }}"><img src="{{ x.photo_url }}" alt="รูป {{ x.name }}" loading="lazy"></button>
+          {% else %}<div class="who-photo placeholder">{{ x.name|initial }}</div>{% endif %}
+          <div style="min-width:0">
+            <b>{{ x.name }}{% if x.surname %} {{ x.surname }}{% endif %}</b>
+            <div class="small muted">เข้า {{ x.last_in|slice:"11:16" }} · {{ x.camera }}</div>
+            {% if x.ins > 1 %}<div class="small muted">เข้า {{ x.ins }} ครั้ง ออก {{ x.outs }} ครั้งวันนี้</div>{% endif %}
+          </div>
+          <span class="live-dot" title="อยู่ข้างใน"></span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted small" style="margin:0">ไม่มีคนที่รู้ชื่ออยู่ข้างใน</p>{% endif %}
+      {% if p.inside_unknown %}<p class="small" style="margin:12px 0 0">{% icon "users" %} และคนที่ไม่ทราบชื่ออีก <b>{{ p.inside_unknown }}</b> คน</p>{% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "chart-line" %} เข้า-ออกรายชั่วโมง</h2>
+        <div class="legend small" style="margin:0"><span><i class="sw" style="background:var(--ok)"></i>เข้า</span><span><i class="sw" style="background:var(--warn)"></i>ออก</span></div></div>
+      {% if p.chart %}
+      <svg viewBox="0 0 640 200" class="chart" role="img" aria-label="จำนวนคนเข้าและออกในแต่ละชั่วโมง">
+        <line x1="{{ p.chart.left }}" x2="{{ p.chart.right }}" y1="{{ p.chart.base }}" y2="{{ p.chart.base }}" class="grid-line"/>
+        <line x1="{{ p.chart.left }}" x2="{{ p.chart.right }}" y1="{{ p.chart.top_y }}" y2="{{ p.chart.top_y }}" class="grid-line" stroke-dasharray="3 4"/>
+        <text x="{{ p.chart.left|add:'-6' }}" y="{{ p.chart.top_y }}" class="tick" text-anchor="end" dominant-baseline="middle">{{ p.chart.top_label }}</text>
+        <text x="{{ p.chart.left|add:'-6' }}" y="{{ p.chart.base }}" class="tick" text-anchor="end" dominant-baseline="middle">0</text>
+        {% for b in p.chart.bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2" class="bar-{{ b.kind }}"><title>{{ b.hour }}:00 {% if b.kind == "in" %}เข้า{% else %}ออก{% endif %} {{ b.value }}</title></rect>{% endfor %}
+        {% for l in p.chart.labels %}<text x="{{ l.x }}" y="190" class="tick" text-anchor="middle">{{ l.text }}</text>{% endfor %}
+      </svg>
+      {% else %}<p class="muted small" style="margin:0">ยังไม่มีข้อมูล</p>{% endif %}
+    </div>
+
+    {% if p.left or p.seen %}
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "history" %} คนอื่นที่เห็นวันนี้</h2></div>
+      <div class="table-scroll" style="max-height:none">
+      <table>
+        <thead><tr><th>ชื่อ</th><th>สถานะ</th><th>เห็นครั้งแรก</th><th>ล่าสุด</th><th>กล้อง</th></tr></thead>
+        <tbody>
+        {% for x in p.left %}<tr><td><div class="person-cell"><span class="mini-avatar">{{ x.name|initial }}</span><b>{{ x.name }}</b></div></td>
+          <td><span class="badge out">{% icon "arrow-left-from-line" %} ออกแล้ว {{ x.last_out|slice:"11:16" }}</span></td>
+          <td class="mono">{{ x.first_seen|slice:"11:19" }}</td><td class="mono">{{ x.last_seen|slice:"11:19" }}</td><td>{{ x.camera }}</td></tr>{% endfor %}
+        {% for x in p.seen %}<tr><td><div class="person-cell"><span class="mini-avatar">{{ x.name|initial }}</span><b>{{ x.name }}</b></div></td>
+          <td><span class="badge">เห็น (ไม่ได้ข้ามเส้น)</span></td>
+          <td class="mono">{{ x.first_seen|slice:"11:19" }}</td><td class="mono">{{ x.last_seen|slice:"11:19" }}</td><td>{{ x.camera }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>{% icon "clock" %} เข้า-ออกล่าสุด</h2></div>
+    {% if p.recent %}
+    <ul class="feed crossing-feed">
+      {% for e in p.recent %}
+      <li>
+        {% if e.photo_url %}<button type="button" class="feed-photo" data-photo="{{ e.photo_url }}"><img src="{{ e.photo_url }}" alt="รูป {{ e.name }}" loading="lazy"></button>
+        {% else %}<span class="feed-photo none">{% icon "users" %}</span>{% endif %}
+        <div style="min-width:0">
+          {% if e.direction == "in" %}<span class="badge in">{% icon "arrow-right-to-line" %} เข้า</span>{% else %}<span class="badge out">{% icon "arrow-left-from-line" %} ออก</span>{% endif %}
+          <b>{{ e.name }}</b>
+          <div class="small muted">{{ e.timestamp|slice:"11:19" }} · {{ e.camera }}</div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted small" style="margin:0">ยังไม่มี</p>{% endif %}
+    <p class="small" style="margin:12px 0 0"><a href="{% url 'history' %}?date={{ date }}">{% icon "history" %} ดูประวัติทั้งหมดของวันนี้</a></p>
+  </div>
+</div>

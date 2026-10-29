@@ -1,9 +1,14 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static ui %}
 {% block title %}แผนผัง · CN401{% endblock %}
 {% block content %}
-<h1>แผนผัง (มองจากด้านบน)</h1>
-<p class="sub">คนจากทุกกล้องที่ปรับเทียบพื้นแล้ว รวมเป็นคนเดียวกันเมื่อยืนจุดเดียวกัน · G-ตัวเลขเดียวกัน = คนเดียวกันในทุกกล้อง</p>
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "map" %} หลายกล้อง</span>
+    <h1>แผนผัง (มองจากด้านบน)</h1>
+    <p class="sub">คนจากทุกกล้องที่ปรับเทียบพื้นแล้ว รวมเป็นคนเดียวกันเมื่อยืนจุดเดียวกัน · G-ตัวเลขเดียวกัน = คนเดียวกันในทุกกล้อง</p>
+  </div>
+</div>
 
 {% if not calibrated %}
 <div class="notice">ยังไม่มีกล้องที่ปรับเทียบพื้น ไปที่หน้ากล้อง แล้วกด <b>ปรับเทียบพื้น</b> (ต้องเป็นผู้ดูแล)</div>
@@ -13,12 +18,12 @@
 {% endif %}
 
 <div class="layout">
-  <div class="panel" style="padding:8px">
+  <div class="panel" style="padding:10px">
     <canvas id="map" class="floor-map" aria-label="แผนผังตำแหน่งคน"></canvas>
-    <div class="small muted" id="legend" style="padding:4px 8px"></div>
+    <div class="small muted" id="legend" style="padding:6px 8px"></div>
   </div>
   <div class="panel">
-    <h2>คนที่อยู่ตอนนี้ <span class="muted" id="count"></span></h2>
+    <div class="panel-head"><h2>{% icon "users" %} คนที่อยู่ตอนนี้ <span class="muted" id="count"></span></h2></div>
     <ul class="feed" id="people"><li class="muted">-</li></ul>
   </div>
 </div>

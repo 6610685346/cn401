@@ -38,6 +38,25 @@ SOURCE = CAMERAS["cam1"]
 MAX_READ_FAILURES = 5
 RECONNECT_DELAY_SEC = 1.0
 
+# ------------------------------------------------------------- performance
+# Work-savers around the models (PERFORMANCE.md). All can be changed on the
+# "ตั้งค่าระบบ" page except YOLO_BACKEND.
+# "auto" = PyTorch on an NVIDIA GPU, OpenVINO on CPU when installed (pip install openvino);
+# "pytorch" / "openvino" to force one.
+YOLO_BACKEND = "auto"
+TRACKER_STATIC = True  # cameras are fixed: no camera-motion compensation in BoT-SORT
+TRACK_BUFFER = 60  # frames a hidden person keeps their ID (default 30)
+MOTION_GATE = True  # skip YOLO while the picture is empty and nothing moves
+IDLE_CHECK_SEC = 2.0  # ...but still look every this many seconds
+SMART_FACES = True  # find faces only around people still without a name
+FACE_EVERY = 2  # ...on every N-th processed frame
+FACE_VOTES = 3  # faces averaged before deciding a name (1 = first face decides)
+FACE_MIN_SIZE = 24  # px; smaller faces are not used for recognition
+LOG_COOLDOWN_SEC = 30  # same named person, same camera: one sighting row per this many seconds
+FACE_FULL_RES = True  # find/embed faces in the camera's full-size picture (far faces get more pixels)
+TRACKER_REID = False  # BoT-SORT also compares appearance (ReID) to keep IDs through occlusions
+REID_MODEL = "auto"  # "auto" = YOLO's own features (cheap) | "yolo26n-reid.onnx" / "yolo26s-reid.onnx"
+
 # ------------------------------------------------------------------ display
 
 ROTATE = 0
@@ -59,6 +78,9 @@ PRINT_MOUSE_POSITION = False
 # downloaded automatically if missing
 
 MODEL_PATH = str(MODELS_DIR / "yolo11n-pose.pt")
+# Which person model runs (choices in vision/detector.py PERSON_MODELS,
+# changeable on the "ตั้งค่าระบบ" page); downloaded to models/<name>.pt.
+PERSON_MODEL = "yolo11n-pose"
 CONFIDENCE = 0.4
 # YOLO input size: smaller = faster, bigger = finds smaller / farther people.
 # 640 is YOLO's default; 480 was used for two cameras on one laptop GPU.
@@ -85,9 +107,13 @@ VLM_PAR_COLOR_LABELS = (
 )
 
 
-# ENABLE_DIRECTION (direction.py).
+# ENABLE_DIRECTION: count people walking in / out (counting/line.py).
+# connect.py uses DOOR_LINES[camera name] if given (copy it from the app's
+# "เส้นประตู" page), otherwise the old fixed zones of direction.py.
+#   DOOR_LINES = {"cam1": {"a": [0.30, 0.70], "b": [0.75, 0.62], "inside": "left"}}
 
 ENABLE_DIRECTION = False
+DOOR_LINES = {}
 
 # Face recognition to match the name using sface
 # To load model run
@@ -96,7 +122,13 @@ ENABLE_DIRECTION = False
 ENABLE_FACE_RECOGNITION = True
 FACE_RECOGNITION_MODEL_PATH = str(
     MODELS_DIR / "face_recognition_sface_2021dec.onnx")
-FACE_MATCH_THRESHOLD = 0.363
+FACE_MATCH_THRESHOLD = 0.363  # for SFace
+# Face recognition model (vision/face_models.py): "sface" | "arcface_mbf" | "arcface_r50".
+# ArcFace models are downloaded to models/insightface/ the first time.
+FACE_RECOGNIZER = "sface"
+# ArcFace vectors are spread differently from SFace's: matches score lower.
+# 0.35 is a starting point; tune it on the "ทดสอบด้วยวิดีโอ" page.
+FACE_MATCH_THRESHOLD_ARCFACE = 0.35
 PEOPLE_DB_PATH = OUTPUT_DIR / "people.json"
 # Enrollment photos, one folder per person (capture_faces.py and the web page)
 PHOTOS_DIR = MODELS_DIR / "photos"
@@ -106,10 +138,23 @@ WARDROBE_LOG_PATH = OUTPUT_DIR / "wardrobe.json"
 # ----------------------------------------------------------------- outputs
 
 SAVE_CSV = True
-SAVE_CROPS = False
+SAVE_CROPS = True  # one small photo per history row (shown on the history page)
 CSV_PATH = None
 CROPS_DIR = OUTPUT_DIR / "cropped_persons"
 MIN_FRAMES_BEFORE_LOG = 5
+
+# ---------------------------------------------------------------- database
+# PostgreSQL (see DATABASE.md). Empty = no database: people.json + CSV only.
+# Set it before starting the program, e.g. (Windows cmd):
+#   set DATABASE_URL=postgresql+psycopg://postgres:PASSWORD@localhost:5432/person_detection
+# then create the tables once:  python register.py init
+# With a database, faces live in persons/face_embeddings and every logged
+# person is a row in detection_logs. SAVE_CSV still writes the CSV as a backup.
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DB_TIMEZONE = "Asia/Bangkok"
+# direction.py reports "Up" / "Down"; which one means walking IN depends on
+# where the camera hangs. Swap these if the counts come out reversed.
+DIRECTION_NAMES = {"Up": "in", "Down": "out"}
 
 # ------------------------------------------------- settings saved from the web
 # The web portal's "ตั้งค่าระบบ" page saves changed values to settings.json next
@@ -117,6 +162,12 @@ MIN_FRAMES_BEFORE_LOG = 5
 # Delete the file (or press "ค่าเริ่มต้น" on that page) to go back to this file.
 SETTINGS_PATH = PROJECT_DIR / "settings.json"
 FILE_DEFAULTS = {}  # name -> value written above, for settings that were overridden
+# Allowed values of the text settings
+CHOICES = {
+    "FACE_RECOGNIZER": ("sface", "arcface_mbf", "arcface_r50"),
+    "PERSON_MODEL": ("yolo11n-pose", "yolo11s-pose", "yolo11m-pose", "yolo26n-pose", "yolo26s-pose"),
+    "REID_MODEL": ("auto", "yolo26n-reid.onnx", "yolo26s-reid.onnx"),
+}
 
 
 def apply_saved_settings(path=None) -> dict:
@@ -137,6 +188,8 @@ def apply_saved_settings(path=None) -> dict:
         same_type = type(value) is type(current) or (isinstance(current, float) and type(value) is int)
         if not same_type:
             continue  # never let a bad file turn a number into text
+        if name in CHOICES and value not in CHOICES[name]:
+            continue  # e.g. a model name that does not exist
         FILE_DEFAULTS.setdefault(name, current)
         module[name] = float(value) if isinstance(current, float) else value
         applied[name] = module[name]

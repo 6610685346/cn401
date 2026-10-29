@@ -75,7 +75,7 @@ class CsvCameraColumnTest(TempOutput):
             row = next(csv.DictReader(f))
         self.assertEqual((row["camera"], row["track_id"], row["name"], row["global_id"]), ("cam2", "7", "Arm", "G3"))
         CropSaver(self.tmp / "crops").save(BUS, detection, time.localtime(), camera="Gate HD")
-        self.assertTrue(next((self.tmp / "crops").glob("Gate-HD_person_7_*.jpg"), None))
+        self.assertTrue(next((self.tmp / "crops").glob("*/Gate-HD_person_7_*.jpg"), None))
 
     def test_old_file_keeps_its_columns(self):
         old = self.tmp / "old.csv"

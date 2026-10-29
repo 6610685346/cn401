@@ -24,12 +24,31 @@ source .venv/Scripts/activate
 pip install -r requirements.txt
 
 python capture_faces.py "personname"
-python enroll.py "personname" models/photos/personname/
+python enroll.py "personname" models/photos/personname/   [--surname X --id 66xxxxxxxx]
 set CAM_PASSWORD=camerapassword      (bash: export CAM_PASSWORD='camerapassword')
 python connect.py
 
-Note 
-the db is still json in output/people.json
+Database (PostgreSQL) - optional, see DATABASE.md
+
+without DATABASE_URL everything stays as before: faces in output/people.json, history in CSV.
+with it, faces go to persons/face_embeddings and every logged person is a row in detection_logs
+(the CSV is still written as a backup while SAVE_CSV is on).
+1. install Docker Desktop, then in this folder:
+     set DB_PASSWORD=pick-a-password
+     docker compose up -d
+2. tell the program where the database is (setx keeps it for new windows, incl. "CN401 App.bat"):
+     setx DATABASE_URL "postgresql+psycopg://postgres:pick-a-password@localhost:5432/person_detection"
+   close this window and open a new one
+3. .venv\Scripts\activate  then  pip install -r requirements.txt   (adds SQLAlchemy + psycopg)
+4. cd new
+     python register.py init            create the tables
+     python register.py import-people   copy output/people.json in (optional)
+     python register.py import-csv      copy the old CSV history in (optional, safe to repeat)
+     python register.py status          check
+5. start the app: its first page says "บันทึกลง PostgreSQL"
+other commands: python register.py list | delete NAME | purge --days 90
+in/out counting: tick "บอกทิศทางเดินผ่านโซน" on a camera; rows get direction in/out
+(swap DIRECTION_NAMES in config.py if in and out come out reversed)
 
 
 Desktop app (V02) - main program

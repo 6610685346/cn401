@@ -1,0 +1,54 @@
+{% load ui %}
+{% if m.events and m.reviewed < m.events %}
+<div class="notice info small" style="margin-bottom:14px">{% icon "list-checks" %} ตรวจแล้ว <b>{{ m.reviewed }}</b> จาก {{ m.events }} แถว — ตัวชี้วัดคิดจากแถวที่ตรวจแล้วเท่านั้น</div>
+{% endif %}
+<div class="metric-grid">
+  <div class="panel">
+    <div class="panel-head"><h2>{% icon "users" %} การตรวจจับคน</h2><span class="badge">TP {{ m.detection.tp }} · FP {{ m.detection.fp }} · FN {{ m.detection.fn }}</span></div>
+    <div class="metric-row">
+      <div class="metric"><span>Precision</span><b>{{ m.detection.precision|pct }}</b></div>
+      <div class="metric"><span>Recall</span><b>{{ m.detection.recall|pct }}</b></div>
+      <div class="metric"><span>F1</span><b>{{ m.detection.f1|pct }}</b></div>
+    </div>
+    <p class="small muted metric-note">นับ 1 ครั้งต่อการเดินผ่าน 1 รอบ · FP รวมการบันทึกคนเดิมซ้ำ · FN มาจากช่อง "ระบบพลาด"</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>{% icon "scan-face" %} การรู้จำใบหน้า</h2><span class="badge accent">τ = {{ m.threshold }}</span></div>
+    <div class="metric-row">
+      <div class="metric"><span>FAR</span><b>{{ m.face.far|pct }}</b><small>{{ m.face.false_accept }}/{{ m.face.impostor }}</small></div>
+      <div class="metric"><span>FRR</span><b>{{ m.face.frr|pct }}</b><small>{{ m.face.false_reject }}/{{ m.face.genuine }}</small></div>
+      <div class="metric"><span>Accuracy</span><b>{{ m.face.accuracy|pct }}</b><small>{{ m.face.correct }}/{{ m.face.genuine }}</small></div>
+      <div class="metric"><span>MisID</span><b>{{ m.face.misid|pct }}</b><small>{{ m.face.misidentified }}/{{ m.face.genuine }}</small></div>
+    </div>
+    <p class="small muted metric-note">Face coverage <b>{{ m.face.coverage|pct }}</b> ({{ m.face.with_face }}/{{ m.detection.tp }} คนที่เห็นหน้า) ·
+      Genuine {{ m.face.genuine }} · Impostor {{ m.face.impostor }}</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>{% icon "door-open" %} การนับเข้า/ออก</h2>{% if m.direction.crossings %}<span class="badge">ตรวจแล้ว {{ m.direction.reviewed }}/{{ m.direction.crossings }}</span>{% endif %}</div>
+    {% if m.direction.crossings or m.direction.in.fn or m.direction.out.fn %}
+    <div class="metric-row">
+      <div class="metric"><span>Precision เข้า</span><b>{{ m.direction.in.precision|pct }}</b></div>
+      <div class="metric"><span>Recall เข้า</span><b>{{ m.direction.in.recall|pct }}</b></div>
+      <div class="metric"><span>Precision ออก</span><b>{{ m.direction.out.precision|pct }}</b></div>
+      <div class="metric"><span>Recall ออก</span><b>{{ m.direction.out.recall|pct }}</b></div>
+    </div>
+    <p class="small muted metric-note">นับคนในห้องคลาดเคลื่อน <b>{{ m.direction.occupancy_error|default_if_none:"–" }}</b> คน ·
+      ระบบนับเข้า {{ m.direction.in.logged }} ออก {{ m.direction.out.logged }}</p>
+    {% else %}
+    <p class="small muted">ไม่มีการเดินข้ามโซน — เปิด "นับทิศทางเข้า/ออก" ตอนอัปโหลดถ้าต้องการวัดส่วนนี้</p>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>{% icon "gauge" %} ความเร็ว</h2>{% if stats.width %}<span class="badge">{{ stats.width }}×{{ stats.height }} · {{ stats.video_fps|num:0 }} fps</span>{% endif %}</div>
+    <div class="metric-row">
+      <div class="metric"><span>ประมวลผลได้</span><b>{{ stats.processing_fps|num:1 }}</b><small>fps</small></div>
+      <div class="metric"><span>ต่อเฟรม</span><b>{{ stats.ms_per_frame|num:0 }}</b><small>ms</small></div>
+      <div class="metric"><span>ได้ดูจริง</span><b>{{ stats.effective_fps|num:1 }}</b><small>fps ของวิดีโอ</small></div>
+      <div class="metric"><span>เวลาหน่วง</span><b>{{ m.latency_s|num:2 }}</b><small>วินาที</small></div>
+    </div>
+    <p class="small muted metric-note">ประมวลผล {{ stats.frames_processed|default:0 }} จาก {{ stats.frames_read|default:0 }} เฟรม
+      {% if stats.frames_dropped %}· ทิ้ง {{ stats.frames_dropped }} เฟรมเพราะประมวลผลไม่ทัน (จำลองกล้องจริง){% endif %}
+      {% if stats.frames_skipped %}· ข้าม {{ stats.frames_skipped }} เฟรมตาม FRAME_SKIP{% endif %}
+      · เวลาหน่วง = จากเห็นคนครั้งแรกจนบันทึก</p>
+  </div>
+</div>

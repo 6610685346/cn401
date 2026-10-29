@@ -1,30 +1,34 @@
 {% extends "base.html" %}
+{% load ui %}
 {% block title %}ลงทะเบียน {{ result.name }} · CN401{% endblock %}
 {% block content %}
-<h1>ลงทะเบียน {{ result.name }} แล้ว</h1>
-<p class="sub">ใช้ {{ result.used }} รูปในการจำหน้า · รูปใหม่ใช้ได้ {{ new_ok }} จาก {{ new_total }} รูป
-  {% if result.used < 3 %}· <b style="color:var(--warn)">แนะนำให้เพิ่มเป็น 3 รูปขึ้นไปเพื่อให้จำแม่นขึ้น</b>{% endif %}</p>
+<div class="page-head">
+  <div>
+    <span class="eyebrow" style="color:var(--ok);background:var(--ok-soft)">{% icon "circle-check" %} สำเร็จ</span>
+    <h1>ลงทะเบียน {{ result.name }} แล้ว</h1>
+    <p class="sub">ใช้ {{ result.used }} รูปในการจำหน้า · รูปใหม่ใช้ได้ {{ new_ok }} จาก {{ new_total }} รูป
+      {% if result.used < 3 %}· <b style="color:var(--warn)">แนะนำให้เพิ่มเป็น 3 รูปขึ้นไปเพื่อให้จำแม่นขึ้น</b>{% endif %}</p>
+  </div>
+  <div class="actions"><a class="btn primary" href="{% url 'people' %}">{% icon "arrow-left" %} กลับไปหน้าคนที่ลงทะเบียน</a></div>
+</div>
 
 {% if result.looks_like %}
-<div class="notice">หน้านี้คล้าย <b>{{ result.looks_like.0 }}</b> มาก (ความคล้าย {{ result.looks_like.1 }})
+<div class="notice">{% icon "triangle-alert" %} หน้านี้คล้าย <b>{{ result.looks_like.0 }}</b> มาก (ความคล้าย {{ result.looks_like.1 }})
   ถ้าเป็นคนละคน ระบบอาจสับสนชื่อสองคนนี้ ลองใช้รูปที่ชัดขึ้น หรือถ้าเป็นคนเดียวกันให้ลบชื่อใดชื่อหนึ่ง</div>
 {% endif %}
 
 <div class="panel">
-  <h2>ผลแต่ละรูป</h2>
-  <p class="small muted">รูปเล็กคือ "หน้าที่ระบบเลือกใช้" ในรูปนั้น ถ้าไม่ใช่หน้าของ {{ result.name }} ให้ลบแล้วลงทะเบียนใหม่ด้วยรูปที่มีคนเดียว</p>
+  <div class="panel-head"><h2>{% icon "scan-face" %} ผลแต่ละรูป</h2></div>
+  <p class="small muted" style="margin-top:-6px">รูปเล็กคือ "หน้าที่ระบบเลือกใช้" ในรูปนั้น ถ้าไม่ใช่หน้าของ {{ result.name }} ให้ลบแล้วลงทะเบียนใหม่ด้วยรูปที่มีคนเดียว</p>
   <div class="result-grid">
   {% for r in reports %}
     <div class="result-card {% if not r.ok %}bad{% endif %}">
       {% if r.thumbnail %}<img src="data:image/jpeg;base64,{{ r.thumbnail }}" alt="ใบหน้าจาก {{ r.filename }}">{% endif %}
       <div class="small mono">{{ r.filename }}{% if not r.is_new %} <span class="muted">(รูปเดิม)</span>{% endif %}</div>
-      <div class="small {% if r.ok %}ok-text{% else %}bad-text{% endif %}">{{ r.message }}</div>
+      <div class="small {% if r.ok %}ok-text{% else %}bad-text{% endif %}">{% if r.ok %}{% icon "circle-check" %}{% else %}{% icon "circle-x" %}{% endif %} {{ r.message }}</div>
       {% if r.similarity is not None %}<div class="small muted">เหมือนรูปอื่น {{ r.similarity }}</div>{% endif %}
     </div>
   {% endfor %}
   </div>
-</div>
-<div class="row" style="margin-top:16px">
-  <a class="btn primary" href="{% url 'people' %}">กลับไปหน้าคนที่ลงทะเบียน</a>
 </div>
 {% endblock %}

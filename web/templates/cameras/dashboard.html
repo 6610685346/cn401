@@ -1,61 +1,94 @@
 {% extends "base.html" %}
+{% load static ui %}
 {% block title %}กล้อง IP · CN401{% endblock %}
 {% block content %}
-<div class="row spread">
+<div class="page-head">
   <div>
+    <span class="eyebrow">{% icon "activity" %} ภาพรวม</span>
     <h1>กล้อง IP</h1>
-    <p class="sub">กล้องที่ "รันอยู่" จะทำงานและบันทึกลง CSV ตลอดเวลาที่แอปเปิดอยู่ (ย่อหน้าต่างไว้ได้ แต่อย่าปิด) ·
-      ประมวลผลด้วย <b>{{ device.name }}</b>{% if not device.gpu %} <span style="color:var(--warn)">(ช้า: ไม่ได้ใช้ GPU)</span>{% endif %}</p>
+    <p class="sub">กล้องที่ "รันอยู่" จะทำงานและบันทึกประวัติตลอดเวลาที่แอปเปิดอยู่ (ย่อหน้าต่างไว้ได้ แต่อย่าปิด)</p>
   </div>
-  {% if user.is_staff %}<a class="btn primary" href="{% url 'camera_add' %}">+ เพิ่มกล้อง</a>{% endif %}
+  <div class="actions">{% if cameras %}<a class="btn" href="{% url 'camera_wall' %}">{% icon "layout-grid" %} ดูหลายกล้อง</a>{% endif %}
+    {% if user.is_staff %}<a class="btn primary" href="{% url 'camera_add' %}">{% icon "plus" %} เพิ่มกล้อง</a>{% endif %}</div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="kpi-icon">{% icon "cctv" "i-lg" %}</div>
+    <div><div class="kpi-label">กล้องทั้งหมด</div><div class="kpi-value">{{ cameras|length }}</div></div></div>
+  <div class="kpi"><div class="kpi-icon ok">{% icon "activity" "i-lg" %}</div>
+    <div><div class="kpi-label">กำลังทำงาน</div><div class="kpi-value" data-total="running">-</div></div></div>
+  <div class="kpi"><div class="kpi-icon cyan">{% icon "users" "i-lg" %}</div>
+    <div><div class="kpi-label">คนในภาพตอนนี้</div><div class="kpi-value" data-total="people">-</div></div></div>
+  <div class="kpi"><div class="kpi-icon {% if not device.gpu %}warn{% endif %}">{% icon "cpu" "i-lg" %}</div>
+    <div style="min-width:0"><div class="kpi-label">ประมวลผลด้วย</div>
+      <div class="kpi-value text">{{ device.name }}</div>
+      {% if not device.gpu %}<span class="badge out">ช้า: ไม่ได้ใช้ GPU</span>{% endif %}</div></div>
+  <div class="kpi"><div class="kpi-icon {% if not storage.ok %}warn{% endif %}">{% icon "database" "i-lg" %}</div>
+    <div style="min-width:0"><div class="kpi-label">บันทึกลง</div>
+      <div class="kpi-value text"{% if not storage.ok %} style="color:var(--bad)"{% endif %}>{{ storage.name }}</div></div></div>
 </div>
 
 {% if web_info.managed %}
-<div class="panel" style="margin-bottom:16px">
-  <h2 style="margin-top:0">เว็บดูประวัติ (สำหรับเครื่องอื่นใน LAN)</h2>
-  {% if web_info.enabled %}
-    <p class="small">เครื่องอื่นเปิดดูประวัติได้ที่
-      {% for u in web_info.urls %}<span class="mono"><b>{{ u }}</b></span>{% if not forloop.last %} หรือ {% endif %}{% empty %}(ไม่พบ IP ของเครื่องนี้ในวง LAN){% endfor %}
-      · ต้อง login ด้วยบัญชีที่สร้างในเมนู <a href="{% url 'admin:index' %}">ผู้ดูแล</a> → Users
-      · เว็บดูได้แค่ประวัติ การต่อกล้องและตั้งค่าทำได้ในแอปนี้เท่านั้น</p>
-  {% else %}
-    <p class="small muted">ปิดอยู่{% if web_info.error %}: {{ web_info.error }}{% endif %}</p>
-  {% endif %}
+<div class="notice info row" style="align-items:flex-start;gap:12px">
+  {% icon "monitor-check" "i-lg" %}
+  <div style="flex:1;min-width:0">
+    <b>เว็บดูประวัติ (สำหรับเครื่องอื่นใน LAN)</b>
+    {% if web_info.enabled %}
+      <div class="small">เครื่องอื่นเปิดดูประวัติได้ที่
+        {% for u in web_info.urls %}<span class="mono"><b>{{ u }}</b></span>{% if not forloop.last %} หรือ {% endif %}{% empty %}(ไม่พบ IP ของเครื่องนี้ในวง LAN){% endfor %}
+        · ต้อง login ด้วยบัญชีที่สร้างในเมนู <a href="{% url 'admin:index' %}">ผู้ดูแล</a> → Users
+        · เว็บดูได้แค่ประวัติ การต่อกล้องและตั้งค่าทำได้ในแอปนี้เท่านั้น</div>
+    {% else %}
+      <div class="small muted">ปิดอยู่{% if web_info.error %}: {{ web_info.error }}{% endif %}</div>
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 
 {% if not cameras %}
-<div class="panel">
+<div class="panel empty-state">
+  <img src="{% static 'img/empty-cameras.svg' %}" alt="">
   <h2>ยังไม่มีกล้อง</h2>
-  <p class="muted">กด "เพิ่มกล้อง" แล้วใส่ URL ของกล้อง เช่น <span class="mono">rtsp://user:pass@192.168.1.13:554/media/video2</span>
+  <p>กด "เพิ่มกล้อง" แล้วใส่ URL ของกล้อง เช่น <span class="mono">rtsp://user:pass@192.168.1.13:554/media/video2</span>
     หรือใช้กล้องที่ต่อกับเครื่องตัวเองได้ที่เมนู <a href="{% url 'browser_camera' %}">กล้องของเครื่องนี้</a></p>
+  <div class="row" style="justify-content:center">
+    {% if user.is_staff %}<a class="btn primary" href="{% url 'camera_add' %}">{% icon "plus" %} เพิ่มกล้อง</a>{% endif %}
+    <a class="btn" href="{% url 'browser_camera' %}">{% icon "webcam" %} ใช้กล้องของเครื่องนี้</a>
+  </div>
 </div>
 {% endif %}
 
 <div class="grid">
 {% for camera in cameras %}
-  <div class="panel" data-camera="{{ camera.id }}">
-    <div class="row spread">
-      <h2 style="margin:0"><a href="{% url 'camera_live' camera.id %}">{{ camera.name }}</a></h2>
+  <div class="panel cam-card" data-camera="{{ camera.id }}">
+    <div class="cam-top">
+      <div class="cam-icon">{% icon "cctv" "i-lg" %}</div>
+      <div class="grow">
+        <h2><a href="{% url 'camera_live' camera.id %}">{{ camera.name }}</a></h2>
+        <span class="mono muted">{{ camera.masked_source }}</span>
+      </div>
       <span class="pill s-{{ camera.state.status|default:'stopped' }}" data-field="status">{{ camera.state.status|default:"stopped" }}</span>
     </div>
-    <p class="mono muted">{{ camera.masked_source }}</p>
-    <p class="small"><span class="badge {% if camera.is_calibrated %}on{% endif %}">{% if camera.is_calibrated %}ปรับเทียบพื้นแล้ว · รวมกับกล้องอื่นได้{% else %}ยังไม่ปรับเทียบพื้น{% endif %}</span></p>
-    <p class="small muted" data-field="message">{{ camera.state.message }}</p>
-    <p class="small">
-      คนในภาพ <b data-field="people_now">{{ camera.state.people_now|default:"-" }}</b> ·
-      <span data-field="fps">{{ camera.state.fps|default:"-" }}</span> fps ·
-      กล้อง <span data-field="source_size">-</span>
-    </p>
-    <div class="row">
-      <a class="btn" href="{% url 'camera_live' camera.id %}">ดูสด</a>
+    <div class="cam-metrics">
+      <div><span>คนในภาพ</span><b data-field="people_now">{{ camera.state.people_now|default:"-" }}</b></div>
+      <div><span>ความเร็ว</span><b><span data-field="fps">{{ camera.state.fps|default:"-" }}</span> <small class="muted">fps</small></b></div>
+      <div><span>ความละเอียด</span><b class="small" data-field="source_size">-</b></div>
+    </div>
+    <div class="cam-body">
+      <span class="badge {% if camera.is_calibrated %}on{% endif %}">{% icon "crosshair" %}{% if camera.is_calibrated %}ปรับเทียบพื้นแล้ว · รวมกับกล้องอื่นได้{% else %}ยังไม่ปรับเทียบพื้น{% endif %}</span>
+      <span class="badge {% if camera.has_door and camera.enable_direction %}on{% endif %}">{% icon "door-open" %}{% if camera.has_door and camera.enable_direction %}นับเข้า/ออกอยู่{% elif camera.has_door %}มีเส้นประตู (ปิดการนับ){% else %}ยังไม่มีเส้นประตู{% endif %}</span>
+      <p class="small muted" data-field="message" style="margin:8px 0 0">{{ camera.state.message }}</p>
+    </div>
+    <div class="cam-actions">
+      <a class="btn sm" href="{% url 'camera_live' camera.id %}">{% icon "eye" %} ดูสด</a>
       {% if user.is_staff %}
       <form class="inline" method="post" action="{% url 'camera_toggle' camera.id %}">{% csrf_token %}
-        {% if camera.should_run %}<input type="hidden" name="run" value="0"><button class="btn">หยุด</button>
-        {% else %}<input type="hidden" name="run" value="1"><button class="btn primary">เริ่ม</button>{% endif %}
+        {% if camera.should_run %}<input type="hidden" name="run" value="0"><button class="btn sm">{% icon "square" %} หยุด</button>
+        {% else %}<input type="hidden" name="run" value="1"><button class="btn sm primary">{% icon "play" %} เริ่ม</button>{% endif %}
       </form>
-      <a class="btn" href="{% url 'camera_edit' camera.id %}">ตั้งค่า</a>
-      <a class="btn" href="{% url 'camera_calibrate' camera.id %}">ปรับเทียบพื้น</a>
+      <a class="btn sm" href="{% url 'camera_edit' camera.id %}">{% icon "sliders-horizontal" %} ตั้งค่า</a>
+      <a class="btn sm" href="{% url 'camera_door' camera.id %}">{% icon "door-open" %} เส้นประตู</a>
+      <a class="btn sm" href="{% url 'camera_calibrate' camera.id %}">{% icon "crosshair" %} ปรับเทียบพื้น</a>
       {% endif %}
     </div>
   </div>
@@ -63,7 +96,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-{% load static %}
 <script>window.STATUS_URL = "{% url 'api_status' %}";</script>
 <script src="{% static 'status.js' %}"></script>
 {% endblock %}

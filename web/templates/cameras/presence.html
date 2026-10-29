@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load static ui %}
+{% block title %}ใครอยู่ตอนนี้ · CN401{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "door-open" %} เข้า-ออก{% if is_today %} · อัปเดตอัตโนมัติ{% endif %}</span>
+    <h1>{% if is_today %}ใครอยู่ในพื้นที่ตอนนี้{% else %}สรุปการเข้า-ออก {{ date }}{% endif %}</h1>
+    <p class="sub">นับจากการเดินข้ามเส้นประตูของทุกกล้องในวันนี้ (เวลาไทย) · คนที่เดินเข้าแล้วยังไม่เดินออก = อยู่ข้างใน · อ่านจาก {{ store }}</p>
+  </div>
+  <form method="get" class="actions row" style="gap:8px">
+    <input type="date" name="date" value="{{ date }}" style="width:auto" onchange="this.form.submit()" aria-label="เลือกวันที่">
+    {% if not is_today %}<a class="btn" href="?">{% icon "clock" %} วันนี้</a>{% endif %}
+  </form>
+</div>
+<div id="presence" data-url="?partial=1&date={{ date }}" data-live="{{ is_today|yesno:'1,0' }}">
+  {% include "cameras/presence_body.html" %}
+</div>
+{% endblock %}
+{% block scripts %}
+<div class="lightbox" id="lightbox" hidden><img alt="รูปจากประวัติ"><span class="small">คลิกที่ใดก็ได้เพื่อปิด</span></div>
+<script>
+(function () {
+  const root = document.getElementById("presence"), box = document.getElementById("lightbox"), big = box.querySelector("img");
+  root.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-photo]");
+    if (b) { big.src = b.dataset.photo; box.hidden = false; }
+  });
+  box.addEventListener("click", () => { box.hidden = true; big.removeAttribute("src"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") box.hidden = true; });
+  if (root.dataset.live === "1") {
+    setInterval(async () => {
+      if (!box.hidden || document.hidden) return;
+      try {
+        const res = await fetch(root.dataset.url, { cache: "no-store" });
+        if (res.ok && !res.redirected) root.innerHTML = await res.text();
+      } catch (e) { /* server busy */ }
+    }, 10000);
+  }
+})();
+</script>
+{% endblock %}

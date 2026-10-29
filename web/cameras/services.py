@@ -35,6 +35,8 @@ from person_detection.sources.stream import LatestFrameStream, open_stream
 log = logging.getLogger("cameras")
 
 JPEG_QUALITY = 80
+# Show "ทดสอบด้วยวิดีโอ" in the menu (hidden until needed; the page still works by URL)
+SHOW_EVAL_MENU = False
 STREAM_TIMEOUT_SEC = 15  # no frame for this long -> reconnect
 MAX_BACKOFF_SEC = 30
 
@@ -52,6 +54,17 @@ web_info = {"managed": False, "enabled": False, "urls": [], "error": ""}
 def mask_passwords(text: str) -> str:
     """rtsp://user:secret@host -> rtsp://user:****@host (for messages shown on pages)."""
     return re.sub(r"(://[^:/@\s]+:)[^@\s]*@", r"\1****@", text)
+
+
+def storage_info() -> dict:
+    """Where faces and logs are saved, for the dashboard."""
+    from person_detection import config
+    if not config.DATABASE_URL:
+        return {"database": False, "ok": True, "name": "ไฟล์ CSV + people.json"}
+    db = factory.database()
+    ok = db.ping()
+    return {"database": True, "ok": ok,
+            "name": "PostgreSQL" + ("" if ok else " (เชื่อมต่อไม่ได้ — บันทึกรอไว้ และยังเขียน CSV ถ้าเปิดไว้)")}
 
 
 def device_info() -> dict:
@@ -91,6 +104,7 @@ class CameraSpec:
                 enable_direction=camera.enable_direction,
                 csv_tag=camera.csv_tag,
                 camera=camera.name,
+                door_line=camera.door_line,
                 save_csv=config.SAVE_CSV,
                 save_crops=config.SAVE_CROPS,
             ),
@@ -114,6 +128,7 @@ class CameraWorker:
         self.jpeg: bytes | None = None
         self.jpeg_id = 0
         self.snapshot_jpeg: bytes | None = None  # un-annotated, for calibration
+        self.processor = None  # FrameProcessor, once the models are loaded
         self._snapshot_at = 0.0
         self.link = CameraLink(hub, spec.name, spec.calibration)
         self._stop = threading.Event()
@@ -139,7 +154,7 @@ class CameraWorker:
             try:
                 if processor is None:
                     self._set("loading", "กำลังโหลดโมเดล")
-                    processor = factory.create(self.spec.options, on_record=self.recent.appendleft,
+                    processor = self.processor = factory.create(self.spec.options, on_record=self.recent.appendleft,
                                                identity=self.link)
                 self._set("connecting", "กำลังเชื่อมต่อกล้อง")
                 with open_stream(self.spec.source, max_failures=3, reconnect_delay=1) as stream:
@@ -207,6 +222,7 @@ class CameraWorker:
             "process_size": self.process_size,
             "people_now": self.people_now,
             "recent": list(self.recent)[:10],
+            "perf": self.processor.perf() if self.processor is not None else None,
         }
 
 
@@ -357,21 +373,94 @@ _enroller_lock = threading.Lock()
 
 
 def enroller():
-    """The face enroller, sharing the face gallery used by the running cameras."""
+    """The face enroller, sharing the face gallery used by the running cameras
+    (of the face model chosen in settings)."""
     global _enroller
     from person_detection import config
     from person_detection.enrollment import FaceEnroller
-    from person_detection.vision.face import FaceDetector, FaceRecognizer
+    from person_detection.vision import face_models
+    from person_detection.vision.face import FaceDetector
 
     with _enroller_lock:
-        if _enroller is None:
+        if _enroller is None or getattr(_enroller.recognizer, "model_key", "sface") != config.FACE_RECOGNIZER:
+            recognizer = face_models.create_recognizer()
             _enroller = FaceEnroller(
                 FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE),
-                FaceRecognizer(config.FACE_RECOGNITION_MODEL_PATH, config.FACE_MATCH_THRESHOLD),
-                factory.people_db(),
+                recognizer,
+                factory.people_db(recognizer.model_key),
                 config.PHOTOS_DIR,
             )
         return _enroller
+
+
+class GalleryJob:
+    """After the face model is changed: download it, then make every
+    enrolled person's face vector with it from their photos (background)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self.state: dict | None = None  # shown on the settings / people pages
+
+    def status(self) -> dict | None:
+        with self._lock:
+            return dict(self.state) if self.state else None
+
+    def running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def missing(self, model: str | None = None) -> list[str]:
+        from person_detection import config
+        from person_detection.enrollment import missing_names
+        return missing_names(factory.people_db(model), config.PHOTOS_DIR)
+
+    def start(self, model: str | None = None, force: bool = False) -> bool:
+        """Start unless already running; only when something is missing (or force)."""
+        from person_detection import config
+        from person_detection.vision import face_models
+        model = model or config.FACE_RECOGNIZER
+        with self._lock:
+            if self.running():
+                return False
+        if not force and face_models.is_downloaded(model) and not self.missing(model):
+            return False
+        with self._lock:
+            self.state = {"model": model, "label": face_models.get(model).label, "running": True,
+                          "phase": "download", "downloaded_mb": 0, "total_mb": face_models.get(model).download_mb,
+                          "done": 0, "total": 0, "current": "", "added": [], "no_photos": [], "failed": {},
+                          "error": ""}
+            self._thread = threading.Thread(target=self._run, args=(model,), name="face-gallery", daemon=True)
+            self._thread.start()
+        return True
+
+    def _set(self, **values) -> None:
+        with self._lock:
+            self.state.update(values)
+
+    def _run(self, model: str) -> None:
+        from person_detection import config
+        from person_detection.enrollment import FaceEnroller, GalleryBuilder
+        from person_detection.vision import face_models
+        from person_detection.vision.face import FaceDetector
+        try:
+            face_models.ensure_model(model, lambda done, total: self._set(
+                downloaded_mb=round(done / 2**20), total_mb=round(total / 2**20) or self.state["total_mb"]))
+            self._set(phase="faces")
+            builder = GalleryBuilder(FaceEnroller(
+                FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE),
+                face_models.create_recognizer(model), factory.people_db(model), config.PHOTOS_DIR))
+            report = builder.run(progress=lambda r: self._set(
+                done=r.done, total=r.total, current=r.current, added=list(r.added),
+                no_photos=list(r.no_photos), failed=dict(r.failed)))
+            self._set(phase="done", running=False, added=report.added, no_photos=report.no_photos,
+                      failed=report.failed, finished_at=time.strftime("%H:%M:%S"))
+        except Exception as exc:
+            log.exception("face gallery for %s failed", model)
+            first = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+            self._set(phase="error", running=False, error=first[:300])
+
+
+gallery = GalleryJob()
 
 
 def reset_enroller() -> None:
@@ -386,8 +475,12 @@ def reset_shared_state() -> None:
     global _enroller
     with _enroller_lock:
         _enroller = None
+    if factory._log_writer is not None:
+        factory._log_writer.close()
     factory._people_db = None
     factory._wardrobe = None
+    factory._database = None
+    factory._log_writer = None
     global hub
     hub = IdentityHub()
 
@@ -409,6 +502,17 @@ def start_background() -> None:
         from . import system_settings
         from .models import Camera
         system_settings.load_and_apply()  # settings.json from the "ตั้งค่าระบบ" page
+        from person_detection import config
+        if config.FACE_RECOGNIZER != "sface":
+            try:
+                gallery.start()  # people enrolled while another face model was in use
+            except Exception as exc:
+                log.error("could not check the face gallery: %s", exc)
+        try:
+            from .evaluation import jobs
+            jobs.resume_after_restart()  # video tests left unfinished when the app closed
+        except Exception as exc:  # e.g. database not migrated yet
+            log.error("could not resume video tests: %s", exc)
         try:
             for camera in Camera.objects.filter(should_run=True):
                 workers.start(camera)

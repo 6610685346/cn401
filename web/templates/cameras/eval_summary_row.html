@@ -1,0 +1,9 @@
+{% load ui %}<tr{% if strong %} style="font-weight:600"{% endif %}>
+  <td>{{ g.label }}</td><td>{{ g.videos }}</td><td>{{ g.m.reviewed }}/{{ g.m.events }}</td>
+  <td>{{ g.m.detection.precision|pct }}</td><td>{{ g.m.detection.recall|pct }}</td><td>{{ g.m.detection.f1|pct }}</td>
+  <td>{{ g.m.face.far|pct }}</td><td>{{ g.m.face.frr|pct }}</td><td>{{ g.m.face.accuracy|pct }}</td><td>{{ g.m.face.misid|pct }}</td>
+  <td>{{ g.m.face.coverage|pct }}</td>
+  <td>{{ g.m.direction.in.precision|pct:0 }} / {{ g.m.direction.in.recall|pct:0 }}</td>
+  <td>{{ g.m.direction.out.precision|pct:0 }} / {{ g.m.direction.out.recall|pct:0 }}</td>
+  <td>{{ g.m.latency_s|num:2 }}</td>
+</tr>

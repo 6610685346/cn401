@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% load static ui %}
+{% block title %}{{ video.name }} · ทดสอบด้วยวิดีโอ · CN401{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="small" href="{% url 'evaluate' %}">{% icon "arrow-left" %} วิดีโอทั้งหมด</a>
+    <h1 style="margin-top:6px">{{ video.name }}</h1>
+    <div class="row small" style="gap:6px">
+      <span class="badge {% if video.split == 'train' %}accent{% endif %}">{{ split }}</span>
+      {% if lighting and lighting != "-" %}<span class="badge">แสง: {{ lighting }}</span>{% endif %}
+      {% if distance and distance != "-" %}<span class="badge">ระยะ: {{ distance }}</span>{% endif %}
+      {% if video.options.realtime %}<span class="badge">จำลองเวลาจริง</span>{% endif %}
+      {% if video.options.direction %}<span class="badge">นับเข้า/ออก{% if video.options.door_line %} (เส้นประตู){% endif %}</span>{% endif %}
+      <span class="muted">อัปโหลดโดย {{ video.created_by|default:"-" }} · {{ video.created_at|date:"j M Y H:i" }}</span>
+    </div>
+  </div>
+  <div class="actions">
+    {% if not running %}<a class="btn" href="{% url 'eval_export' video.id %}?t={{ threshold }}">{% icon "download" %} ผลทุกแถว (CSV)</a>{% endif %}
+    {% if user.is_staff %}
+      {% if running %}
+      <form method="post" action="{% url 'eval_cancel' video.id %}">{% csrf_token %}<button class="btn danger">{% icon "square" %} หยุด</button></form>
+      {% else %}
+      <form method="post" action="{% url 'eval_rerun' video.id %}" onsubmit="return confirm('ประมวลผลใหม่? ผลที่ตรวจไว้ของวิดีโอนี้จะถูกล้าง')">{% csrf_token %}
+        <button class="btn">{% icon "refresh-cw" %} ประมวลผลใหม่</button></form>
+      {% endif %}
+      <form method="post" action="{% url 'eval_delete' video.id %}" onsubmit="return confirm('ลบวิดีโอนี้และผลทั้งหมด?')">{% csrf_token %}
+        <button class="btn danger">{% icon "trash-2" %} ลบ</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{% if running or video.status == "error" or video.status == "cancelled" %}
+<div class="panel run-panel" id="run" data-status-url="{% url 'api_eval_status' video.id %}" data-running="{{ running|yesno:'1,0' }}" style="margin-bottom:22px">
+  <div class="row spread">
+    <h2 style="margin:0">{% if running %}{% icon "loader-circle" "spin" %} กำลังจำลองการทำงาน…{% elif video.status == "error" %}{% icon "circle-x" %} ประมวลผลไม่สำเร็จ{% else %}{% icon "ban" %} ยกเลิกแล้ว{% endif %}</h2>
+    <span class="small muted" id="run-message">{{ video.message }}</span>
+  </div>
+  {% if running %}
+  <div class="progress" style="margin:12px 0"><div id="run-bar" style="width:{% widthratio video.progress 1 100 %}%"></div></div>
+  <div class="row" style="align-items:flex-start;gap:18px">
+    <div class="stage" style="flex:1.4;min-width:280px"><img id="run-preview" alt="ภาพที่กำลังประมวลผล" data-src="{% url 'eval_preview' video.id %}" hidden>
+      <div class="empty" id="run-empty">{% icon "film" %}รอภาพแรก…</div></div>
+    <div style="flex:1;min-width:200px" class="small">
+      <p>ระบบกำลังเล่นวิดีโอผ่านขั้นตอนเดียวกับกล้องจริง พบแล้ว <b id="run-events">{{ video.events.count }}</b> แถว</p>
+      <p class="muted">ปิดหน้านี้ได้ งานจะทำต่อเบื้องหลัง เมื่อเสร็จหน้านี้จะแสดงผลให้ตรวจเอง</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not running %}
+<div class="row spread" style="margin-bottom:12px">
+  <h2 style="margin:0">{% icon "chart-line" %} ตัวชี้วัด</h2>
+  <form method="get" class="row small" style="gap:6px">เกณฑ์ใบหน้า τ
+    <input type="number" name="t" value="{{ threshold }}" step="0.01" min="0.05" max="0.95" style="width:90px;padding:5px 8px">
+    <button class="btn sm">คำนวณใหม่</button>
+    {% if threshold != current_threshold %}<a class="small" href="?">กลับเป็นค่าที่ระบบใช้ ({{ current_threshold }})</a>{% endif %}</form>
+</div>
+<div id="metrics" data-url="{% url 'api_eval_metrics' video.id %}?t={{ threshold }}">{% include "cameras/eval_metrics.html" %}</div>
+
+<div class="panel" style="margin-top:22px">
+  <div class="panel-head"><h2>{% icon "gauge" %} เปรียบเทียบโมเดลกับวิดีโอนี้</h2>
+    <span class="badge accent">รอบนี้: {{ model_label }}</span></div>
+  <p class="small muted" style="margin-top:-6px">เปลี่ยนโมเดลในหน้า "ตั้งค่าระบบ" แล้วกด "ประมวลผลใหม่" ผลรอบเดิมจะถูกเก็บไว้ในตารางนี้
+    และผลตรวจที่กรอกไว้จะถูกใส่ให้แถวที่เป็นคนเดิมในเวลาใกล้กันโดยอัตโนมัติ · แต่ละรอบคำนวณที่ τ ของโมเดลใบหน้ารอบนั้น</p>
+  <div class="table-scroll"><table class="small">
+    <thead><tr><th>รอบ</th><th>โมเดล</th><th>τ</th><th>ms/เฟรม</th><th>ตรวจแล้ว</th><th>Precision</th><th>Recall</th><th>F1</th>
+      <th>FAR</th><th>FRR</th><th>Accuracy</th><th>Coverage</th><th>หน่วง (s)</th></tr></thead>
+    <tbody>
+    {% if this_run %}{% with r=this_run %}<tr style="font-weight:600"><td>ล่าสุด</td><td>{{ r.label }}</td><td>{{ r.threshold }}</td><td>{{ r.ms_per_frame|num:1 }}</td>
+      <td>{{ r.reviewed }}/{{ r.events }}</td><td>{{ r.precision|pct }}</td><td>{{ r.recall|pct }}</td><td>{{ r.f1|pct }}</td>
+      <td>{{ r.far|pct }}</td><td>{{ r.frr|pct }}</td><td>{{ r.accuracy|pct }}</td><td>{{ r.coverage|pct }}</td><td>{{ r.latency_s|num:2 }}</td></tr>{% endwith %}{% endif %}
+    {% for r in runs %}<tr><td class="muted">{{ r.finished_at|slice:":16"|default:"ก่อนหน้า" }}</td><td>{{ r.label }}</td><td>{{ r.threshold }}</td><td>{{ r.ms_per_frame|num:1 }}</td>
+      <td>{{ r.reviewed }}/{{ r.events }}</td><td>{{ r.precision|pct }}</td><td>{{ r.recall|pct }}</td><td>{{ r.f1|pct }}</td>
+      <td>{{ r.far|pct }}</td><td>{{ r.frr|pct }}</td><td>{{ r.accuracy|pct }}</td><td>{{ r.coverage|pct }}</td><td>{{ r.latency_s|num:2 }}</td></tr>{% endfor %}
+    {% if not this_run and not runs %}<tr><td colspan="13" class="muted">ยังไม่มีผล</td></tr>{% endif %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="layout" style="margin-top:22px">
+  <div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>{% icon "list-checks" %} ตรวจผลทีละแถว</h2>
+        <div class="chips" id="filters">
+          <button class="chip-btn on" data-filter="all">ทั้งหมด <b>{{ rows|length }}</b></button>
+          <button class="chip-btn" data-filter="todo">ยังไม่ตรวจ</button>
+          <button class="chip-btn" data-filter="sighting">พบคน</button>
+          <button class="chip-btn" data-filter="cross">เข้า/ออก</button>
+        </div>
+      </div>
+      {% if rows %}
+      <div class="review-list">
+      {% for r in rows %}{% with e=r.e %}
+        <div class="review {% if e.kind == 'sighting' %}{% if e.gt_status == 'ok' %}is-ok{% elif e.gt_status %}is-bad{% endif %}{% else %}{% if e.gt_direction == 'ok' %}is-ok{% elif e.gt_direction %}is-bad{% endif %}{% endif %}"
+             data-event="{{ e.id }}" data-kind="{{ e.kind }}" data-review-url="{% url 'api_eval_review' e.id %}"
+             data-done="{% if e.kind == 'sighting' %}{{ e.gt_status|yesno:'1,0' }}{% else %}{{ e.gt_direction|yesno:'1,0' }}{% endif %}">
+          <div class="review-photo">{% if e.snapshot %}<img src="{% url 'eval_snapshot' e.id %}" alt="คนในแถวนี้" loading="lazy">{% endif %}</div>
+          <div class="review-body">
+            <div class="row" style="gap:8px">
+              <span class="mono small">{{ e.time_s|clock }}</span>
+              {% if e.kind == "in" %}<span class="badge in">{% icon "arrow-right-to-line" %} เดินเข้า</span>
+              {% elif e.kind == "out" %}<span class="badge out">{% icon "arrow-left-from-line" %} เดินออก</span>
+              {% else %}<span class="badge">พบคน</span>{% endif %}
+              <span class="small muted">ID {{ e.track_id }}</span>
+            </div>
+            <div class="review-says">
+              ระบบบอกว่า <b>{% if r.predicted == None %}{{ e.name }}{% else %}{{ r.predicted }}{% endif %}</b>
+              {% if e.face_seen %}<span class="badge on">{% icon "scan-face" %} เห็นหน้า</span>
+                {% if e.candidate %}<span class="small muted">ใกล้สุด: {{ e.candidate }} ({{ e.score|num:2 }})</span>{% endif %}
+              {% else %}<span class="badge">ไม่เห็นหน้า</span>{% endif %}
+              {% if e.shirt_color %}<span class="small muted">· {{ e.shirt_color }}/{{ e.pants_color }}</span>{% endif %}
+            </div>
+            {% if user.is_staff %}
+            {% if e.kind == "sighting" %}
+            <div class="seg sm" data-field="gt_status">
+              <button data-value="ok" class="{% if e.gt_status == 'ok' %}on{% endif %}">{% icon "check" %} คนจริง</button>
+              <button data-value="false" class="{% if e.gt_status == 'false' %}on{% endif %}">{% icon "x" %} ไม่ใช่คน</button>
+              <button data-value="duplicate" class="{% if e.gt_status == 'duplicate' %}on{% endif %}">{% icon "copy" %} บันทึกซ้ำ</button>
+            </div>
+            <div class="row" style="gap:8px;margin-top:8px;flex-wrap:nowrap">
+              <span class="small" style="white-space:nowrap">คนนี้คือ</span>
+              <select class="identity" data-field="gt_identity">
+                <option value="" {% if not e.gt_identity %}selected{% endif %}>— ยังไม่ระบุ —</option>
+                <option value="{{ NONE }}" {% if e.gt_identity == NONE %}selected{% endif %}>คนที่ไม่ได้ลงทะเบียน</option>
+                <option value="{{ SKIP }}" {% if e.gt_identity == SKIP %}selected{% endif %}>ดูไม่ออก (ไม่นับ)</option>
+                {% for n in names %}<option value="{{ n }}" {% if e.gt_identity == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+              </select>
+            </div>
+            {% if r.faces %}
+            <details class="enroll small">
+              <summary>{% icon "user-plus" %} ลงทะเบียนคนนี้จากวิดีโอ ({{ r.faces }} รูป)</summary>
+              <div class="thumbs" style="margin-top:8px">{% for i in "01234"|make_list|slice:r.faces %}<img src="{% url 'eval_face' e.id forloop.counter0 %}" alt="รูปหน้า" loading="lazy">{% endfor %}</div>
+              <form method="post" action="{% url 'eval_enroll' e.id %}" class="row" style="gap:8px;flex-wrap:nowrap">{% csrf_token %}
+                <input type="text" name="name" required maxlength="40" placeholder="ชื่อ เช่น Arm" list="gallery-names">
+                <button class="btn sm primary">{% icon "user-plus" %} ลงทะเบียน</button></form>
+            </details>
+            {% endif %}
+            {% else %}
+            <div class="seg sm" data-field="gt_direction">
+              <button data-value="ok" class="{% if e.gt_direction == 'ok' %}on{% endif %}">{% icon "check" %} ถูกต้อง</button>
+              <button data-value="wrong" class="{% if e.gt_direction == 'wrong' %}on{% endif %}">{% icon "refresh-cw" %} ทิศผิด</button>
+              <button data-value="false" class="{% if e.gt_direction == 'false' %}on{% endif %}">{% icon "x" %} ไม่ได้ข้ามจริง</button>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="small muted">ผลตรวจ: {{ e.gt_status|default:e.gt_direction|default:"ยังไม่ตรวจ" }}{% if e.gt_identity %} · {{ e.gt_identity }}{% endif %}</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endwith %}{% endfor %}
+      </div>
+      <datalist id="gallery-names">{% for n in gallery %}<option value="{{ n }}">{% endfor %}</datalist>
+      {% else %}
+      <div class="empty-state"><img src="{% static 'img/empty-people.svg' %}" alt=""><h2>ไม่พบคนในวิดีโอนี้</h2>
+        <p>ถ้าในวิดีโอมีคนจริง ให้ใส่จำนวนในช่อง "ระบบพลาด" ด้านขวา (นับเป็น FN)</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stack" style="position:sticky;top:16px">
+    {% if user.is_staff %}
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "circle-x" %} ระบบพลาด (FN)</h2></div>
+      <p class="small muted" style="margin-top:-6px">ดูวิดีโอแล้วนับเองว่ามีอะไรที่ระบบ<b>ไม่ได้บันทึก</b></p>
+      <form method="post" action="{% url 'eval_missed' video.id %}" id="missed-form">{% csrf_token %}
+        <div class="field"><label for="missed_people">คนที่เดินผ่านแต่ไม่มีแถว</label>
+          <input type="number" min="0" name="missed_people" id="missed_people" value="{{ video.missed_people }}"></div>
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label for="missed_in">เดินเข้าที่พลาด</label>
+            <input type="number" min="0" name="missed_in" id="missed_in" value="{{ video.missed_in }}"></div>
+          <div class="field" style="flex:1"><label for="missed_out">เดินออกที่พลาด</label>
+            <input type="number" min="0" name="missed_out" id="missed_out" value="{{ video.missed_out }}"></div>
+        </div>
+        <button class="btn sm">{% icon "save" %} บันทึก</button> <span class="small muted" id="missed-saved"></span>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "list-checks" %} ตรวจเร็ว</h2></div>
+      <p class="small muted" style="margin-top:-6px">ถ้าส่วนใหญ่ระบบทำถูก กดปุ่มนี้ให้ทุกแถวที่ยังไม่ตรวจเป็น "ถูกตามระบบ" แล้วค่อยแก้เฉพาะแถวที่ผิด</p>
+      <form method="post" action="{% url 'eval_bulk_accept' video.id %}?t={{ threshold }}" onsubmit="return confirm('ตั้งทุกแถวที่ยังไม่ตรวจเป็น ถูกตามระบบ?')">{% csrf_token %}
+        <button class="btn sm">{% icon "check" %} ยืนยันตามระบบทุกแถวที่ยังไม่ตรวจ</button></form>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>{% icon "sliders-horizontal" %} ข้อมูลวิดีโอ</h2></div>
+      <form method="post" action="{% url 'eval_update' video.id %}">{% csrf_token %}
+        <div class="field"><label for="v-name">ชื่อ</label><input type="text" id="v-name" name="name" value="{{ video.name }}" maxlength="120"></div>
+        <div class="field"><label for="v-split">ชุดข้อมูล</label><select id="v-split" name="split">
+          <option value="test" {% if video.split == "test" %}selected{% endif %}>ชุดทดสอบ (test)</option>
+          <option value="train" {% if video.split == "train" %}selected{% endif %}>ชุดจูน (train)</option></select></div>
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label for="v-light">แสง</label><select id="v-light" name="lighting">
+            <option value="" {% if not video.lighting %}selected{% endif %}>-</option>
+            <option value="day" {% if video.lighting == "day" %}selected{% endif %}>กลางวัน</option>
+            <option value="night" {% if video.lighting == "night" %}selected{% endif %}>กลางคืน</option>
+            <option value="indoor" {% if video.lighting == "indoor" %}selected{% endif %}>ไฟในห้อง</option></select></div>
+          <div class="field" style="flex:1"><label for="v-dist">ระยะ</label><select id="v-dist" name="distance">
+            <option value="" {% if not video.distance %}selected{% endif %}>-</option>
+            <option value="0-3" {% if video.distance == "0-3" %}selected{% endif %}>0–3 ม.</option>
+            <option value="3-6" {% if video.distance == "3-6" %}selected{% endif %}>3–6 ม.</option>
+            <option value="6-10" {% if video.distance == "6-10" %}selected{% endif %}>6–10 ม.</option>
+            <option value="mixed" {% if video.distance == "mixed" %}selected{% endif %}>หลายระยะ</option></select></div>
+        </div>
+        <button class="btn sm">{% icon "save" %} บันทึก</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>window.EVAL = { csrf: "{{ csrf_token }}" };</script>
+<script src="{% static 'evaluate.js' %}"></script>
+{% endblock %}

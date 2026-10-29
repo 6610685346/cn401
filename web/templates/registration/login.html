@@ -1,19 +1,35 @@
 {% extends "base.html" %}
+{% load static ui %}
 {% block title %}เข้าสู่ระบบ · CN401{% endblock %}
-{% block content %}
-<div class="login-box panel">
-  <h1>CN401 ตรวจจับคน</h1>
-  <p class="sub">{% if portal_mode == "web" %}เข้าสู่ระบบเพื่อดูประวัติการตรวจจับ
-    <br><span class="small muted">การต่อกล้องและตั้งค่าทำได้ในแอปบนเครื่องที่ต่อกล้อง</span>{% else %}เข้าสู่ระบบเพื่อดูกล้องและประวัติ{% endif %}</p>
-  {% if form.errors %}<p class="err" style="color:var(--bad)">ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</p>{% endif %}
-  <form method="post">
-    {% csrf_token %}
-    <div class="field"><label for="id_username">ชื่อผู้ใช้</label>
-      <input type="text" name="username" id="id_username" autofocus autocomplete="username" required></div>
-    <div class="field"><label for="id_password">รหัสผ่าน</label>
-      <input type="password" name="password" id="id_password" autocomplete="current-password" required></div>
-    <input type="hidden" name="next" value="{{ next }}">
-    <button class="btn primary" type="submit">เข้าสู่ระบบ</button>
-  </form>
+{% block body %}
+<div class="auth">
+  <section class="auth-art" aria-hidden="true">
+    <div class="brand"><img src="{% static 'img/logo.svg' %}" alt=""><span><b>CN401 Vision</b><span style="color:#aab6dd">ระบบตรวจจับคนเข้า-ออกพื้นที่</span></span></div>
+    <img class="hero" src="{% static 'img/login-hero.svg' %}" alt="">
+    <div>
+      <h2>รู้ว่าใครเข้า-ออก<br>ทุกประตู แบบเรียลไทม์</h2>
+      <p>ตรวจจับคน จดจำใบหน้า และบันทึกประวัติจากกล้องหลายตัวในที่เดียว</p>
+    </div>
+  </section>
+  <section class="auth-form">
+    <div class="login-box">
+      <h1>เข้าสู่ระบบ</h1>
+      <p class="sub">{% if portal_mode == "web" %}เข้าสู่ระบบเพื่อดูประวัติการตรวจจับ
+        <br><span class="small">การต่อกล้องและตั้งค่าทำได้ในแอปบนเครื่องที่ต่อกล้อง</span>{% else %}เข้าสู่ระบบเพื่อดูกล้องและประวัติ{% endif %}</p>
+      <div class="panel">
+        {% if form.errors %}<div class="notice" style="background:var(--bad-soft);border-left-color:var(--bad)">ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</div>{% endif %}
+        <form method="post">
+          {% csrf_token %}
+          <div class="field"><label for="id_username">ชื่อผู้ใช้</label>
+            <div class="input-icon">{% icon "user" %}<input type="text" name="username" id="id_username" autofocus autocomplete="username" required></div></div>
+          <div class="field"><label for="id_password">รหัสผ่าน</label>
+            <div class="input-icon">{% icon "shield-check" %}<input type="password" name="password" id="id_password" autocomplete="current-password" required></div></div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button class="btn primary" type="submit">{% icon "log-in" %} เข้าสู่ระบบ</button>
+        </form>
+      </div>
+      <p class="small muted" style="text-align:center;margin-top:18px">โครงงาน CN401 · คณะวิศวกรรมศาสตร์ มหาวิทยาลัยธรรมศาสตร์</p>
+    </div>
+  </section>
 </div>
 {% endblock %}

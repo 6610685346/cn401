@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static ui %}
+{% block title %}ดูหลายกล้อง · CN401{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "layout-grid" %} เฝ้าดู</span>
+    <h1>ดูหลายกล้อง</h1>
+    <p class="sub">ภาพสดของทุกกล้องพร้อมกัน · คลิกภาพเพื่อขยายกล้องนั้น คลิกอีกครั้งเพื่อกลับ · กด <b>F</b> เพื่อเต็มจอ</p>
+  </div>
+  <div class="actions wall-controls">
+    <div class="seg" role="group" aria-label="จำนวนคอลัมน์">
+      <button type="button" data-cols="auto" class="on">อัตโนมัติ</button>
+      <button type="button" data-cols="1">1</button>
+      <button type="button" data-cols="2">2</button>
+      <button type="button" data-cols="3">3</button>
+      <button type="button" data-cols="4">4</button>
+    </div>
+    <select id="wall-fps" aria-label="ความลื่นของภาพ" style="width:auto">
+      <option value="15">ลื่น (15 fps)</option>
+      <option value="8" selected>ปกติ (8 fps)</option>
+      <option value="3">ประหยัด (3 fps)</option>
+    </select>
+    <button type="button" class="btn" id="wall-full">{% icon "maximize" %} เต็มจอ</button>
+  </div>
+</div>
+
+{% if cameras %}
+<div class="wall-pick" id="wall-pick">
+  <span class="small muted">แสดง:</span>
+  {% for c in cameras %}<button type="button" class="chip-btn on" data-pick="{{ c.id }}">{{ c.name }}</button>{% endfor %}
+</div>
+
+<div class="wall" id="wall" data-cols="auto" data-status-url="{% url 'api_status' %}">
+  {% for c in cameras %}
+  <figure class="tile" data-camera="{{ c.id }}" data-frame-url="{% url 'camera_frame' c.id %}" data-running="{% if c.state.status == 'running' %}1{% else %}0{% endif %}" tabindex="0" aria-label="กล้อง {{ c.name }}">
+    <img alt="ภาพสดจาก {{ c.name }}" hidden>
+    <div class="tile-empty">{% icon "video" %}<span data-field="empty">{% if c.should_run %}กำลังเชื่อมต่อ…{% else %}กล้องนี้หยุดอยู่{% endif %}</span>
+      {% if user.is_staff and not c.should_run %}
+      <form method="post" action="{% url 'camera_toggle' c.id %}">{% csrf_token %}<input type="hidden" name="run" value="1"><input type="hidden" name="next" value="{% url 'camera_wall' %}">
+        <button class="btn sm">{% icon "play" %} เริ่ม</button></form>
+      {% endif %}
+    </div>
+    <div class="tile-top">
+      <span class="pill s-{{ c.state.status|default:'stopped' }}" data-field="status">{{ c.state.status|default:"stopped" }}</span>
+      <a class="tile-open" href="{% url 'camera_live' c.id %}" title="เปิดหน้ากล้องนี้" aria-label="เปิดหน้ากล้อง {{ c.name }}">{% icon "eye" %}</a>
+    </div>
+    <figcaption class="tile-bottom">
+      <span class="tile-name">{{ c.name }}</span>
+      <span class="tile-stat">{% icon "users" %} <b data-field="people_now">{{ c.state.people_now|default:"-" }}</b> คน</span>
+      <span class="tile-stat"><b data-field="fps">{{ c.state.fps|default:"-" }}</b> fps</span>
+    </figcaption>
+  </figure>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel empty-state">
+  <img src="{% static 'img/empty-cameras.svg' %}" alt="">
+  <h2>ยังไม่มีกล้อง</h2>
+  <p>เพิ่มกล้องในหน้า <a href="{% url 'dashboard' %}">กล้อง IP</a> ก่อน แล้วกลับมาดูภาพจากทุกกล้องพร้อมกันที่นี่</p>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'wall.js' %}"></script>{% endblock %}

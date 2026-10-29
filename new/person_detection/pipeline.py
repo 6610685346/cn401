@@ -13,6 +13,7 @@ frames of *that* camera.
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -20,13 +21,17 @@ from dataclasses import asdict, dataclass, field
 from . import config
 from .core.geometry import Frame, FramePreprocessor, crop_box, normalize_box, short_side
 from .counting.direction import DirectionTracker
-from .storage.people_db import PeopleDB
+from .counting.line import DoorLine, LineCrossCounter
+from .perf.backend import tracker_config
+from .perf.motion import DetectionScheduler, MotionGate
+from .storage.people_db import PeopleDB, people_db_path
 from .storage.recorder import (CropSaver, CsvLog, DailyCsvLog, FaceIdentifier,
                                PersonRecorder, TrackGate)
 from .storage.wardrobe import WardrobeLog
 from .ui.drawing import Overlay
-from .vision.detector import PersonDetector
-from .vision.face import FaceDetector, FaceRecognizer
+from .vision import face_models
+from .vision.detector import PersonDetector, person_model_path
+from .vision.face import FaceDetector, head_region
 from .vision.vlm_par import VLMParReader
 
 # A track not seen for this many processed frames is forgotten, so memory stays
@@ -95,8 +100,24 @@ class FrameProcessor:
         vlm_min_frames: int = config.VLM_PAR_MIN_FRAMES,
         identity=None,
         vlm_pool: ThreadPoolExecutor | None = None,
+        scheduler: DetectionScheduler | None = None,
+        smart_faces: bool = False,
+        face_every: int = 1,
+        face_full_res: bool = False,
     ):
         self.preprocess = preprocess
+        # perf/motion.py: skip YOLO while the picture is empty and still (None = never skip)
+        self.scheduler = scheduler
+        # Look for faces only around people whose name is still unknown, every
+        # `face_every` frames, instead of the whole picture on every frame.
+        self.smart_faces = smart_faces
+        self.face_every = max(1, int(face_every))
+        # Find and embed faces in the camera's full-resolution picture instead
+        # of the scaled-down one (more pixels on far-away faces).
+        self.face_full_res = face_full_res
+        self._source = None  # (full-size upright frame, scale) of the current frame
+        self._had_people = True
+        self.stats = {"frames": 0, "detect_runs": 0, "idle_skips": 0, "face_runs": 0, "face_regions": 0}
         self.detector = detector
         self.face_detector = face_detector
         self.recorder = recorder
@@ -123,12 +144,28 @@ class FrameProcessor:
 
     def process(self, raw: Frame, annotate: bool = True) -> FrameResult:
         source_height, source_width = raw.shape[:2]
-        frame = self.preprocess(raw)
+        upright = self.preprocess.upright(raw)
+        frame = self.preprocess.scale(upright)
         height, width = frame.shape[:2]
+        scale = max(upright.shape[:2]) / max(height, width)
+        self._source = (upright, scale) if self.face_full_res and scale > 1.05 else (None, 1.0)
         self._frame_index += 1
+        self.stats["frames"] += 1
+
+        if self.scheduler is not None and not self.scheduler.should_detect(frame, self._had_people):
+            self.stats["idle_skips"] += 1  # empty, still picture: nothing to detect
+            result = FrameResult(frame, width, height, source_width, source_height)
+            if annotate:
+                if self.direction_tracker:
+                    self.direction_tracker.draw_zones(frame)
+                self.overlay.draw_count(frame, 0)
+            self._forget_stale_tracks()
+            return result
 
         detections = self.detector.detect(frame)
-        faces_raw = self.face_detector.detect_raw(frame) if self.face_detector else []
+        self.stats["detect_runs"] += 1
+        self._had_people = bool(detections)
+        faces_raw = self._faces(frame, detections)
         faces = [box for box, _ in faces_raw]
 
         # Sample colours before drawing, which would paint over other people.
@@ -171,6 +208,9 @@ class FrameProcessor:
                 if direction:
                     result.directions.append((detection.track_id, direction))
                     print(f"Track ID {detection.track_id} -> {direction}")
+                    if self.recorder:
+                        self.recorder.record_direction(
+                            frame, detection, config.DIRECTION_NAMES.get(direction, direction.lower()))
 
         result.faces = [normalize_box(box, width, height) for box in faces]
         if annotate:
@@ -182,6 +222,38 @@ class FrameProcessor:
 
         self._forget_stale_tracks()
         return result
+
+    def _faces(self, frame: Frame, detections) -> list:
+        if self.face_detector is None:
+            return []
+        source, scale = self._source or (None, 1.0)
+        if not self.smart_faces:
+            self.stats["face_runs"] += 1
+            return self.face_detector.detect_full(frame, source, scale)
+        need = [d for d in detections
+                if d.is_tracked and self.recorder is not None and self.recorder.wants_face(d.track_id)]
+        if not need or self._frame_index % self.face_every:
+            return []
+        self.stats["face_runs"] += 1
+        self.stats["face_regions"] += len(need)
+        return self.face_detector.detect_in_regions(frame, [head_region(d.box) for d in need],
+                                                    source=source, scale=scale)
+
+    def perf(self) -> dict:
+        """Work counters for the live page and benchmark.py."""
+        data = dict(self.stats)
+        identifier = getattr(self.recorder, "face_identifier", None)
+        data["face_embeddings"] = getattr(identifier, "embeddings_made", 0)
+        data["rows_skipped"] = getattr(self.recorder, "suppressed", 0)
+        data["backend"] = getattr(self.detector, "backend", "pytorch")
+        data["person_model"] = Path(getattr(self.detector, "model_name", "") or "").stem
+        data["face_model"] = getattr(getattr(identifier, "recognizer", None), "model_key", None)
+        data["reid"] = bool(getattr(self.detector, "reid", False))
+        data["full_res"] = bool(self._source and self._source[0] is not None)
+        frames = data["frames"] or 1
+        data["detect_share"] = round(data["detect_runs"] / frames, 3)
+        data["face_share"] = round(data["face_runs"] / frames, 3)
+        return data
 
     def _vlm_attributes(self, frame: Frame, detection):
         if not (self.vlm_par and detection.is_tracked):
@@ -258,6 +330,9 @@ class CameraOptions:
     save_crops: bool = field(default_factory=lambda: config.SAVE_CROPS)
     csv_tag: str | None = None  # None -> output/person_log_<date>.csv
     camera: str = ""  # camera name for the CSV "camera" column and crop file names
+    # Door line drawn on the "เส้นประตู" page: {"a": [x, y], "b": [x, y], "inside": "left"|"right"}
+    # (0..1 of the processed frame). None = the old fixed zones of direction.py.
+    door_line: dict | None = None
 
 
 class PipelineFactory:
@@ -267,8 +342,10 @@ class PipelineFactory:
         self._lock = threading.Lock()
         self._vlm_par: VLMParReader | None = None
         self._vlm_pool: ThreadPoolExecutor | None = None
-        self._people_db: PeopleDB | None = None
+        self._people_dbs: dict[str, PeopleDB] = {}  # face model -> its gallery
         self._wardrobe: WardrobeLog | None = None
+        self._database = None  # storage.database.Database, when DATABASE_URL is set
+        self._log_writer = None
 
     # ---- shared, loaded on first use -------------------------------------
     def vlm_par(self) -> VLMParReader:
@@ -285,11 +362,54 @@ class PipelineFactory:
                 self._vlm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vlm-par")
             return self._vlm_pool
 
-    def people_db(self) -> PeopleDB:
+    def database(self):
+        """The PostgreSQL connection, or None when DATABASE_URL is empty."""
+        if not config.DATABASE_URL:
+            return None
         with self._lock:
-            if self._people_db is None:
-                self._people_db = PeopleDB(config.PEOPLE_DB_PATH)
-            return self._people_db
+            if self._database is None:
+                from .storage.database import Database  # sqlalchemy only needed with a DB
+                self._database = Database(config.DATABASE_URL, config.DB_TIMEZONE)
+            return self._database
+
+    def log_writer(self):
+        """One background writer for detection_logs shared by every camera."""
+        database = self.database()
+        if database is None:
+            return None
+        with self._lock:
+            if self._log_writer is None:
+                from .storage.database import DetectionLogWriter
+                self._log_writer = DetectionLogWriter(database)
+            return self._log_writer
+
+    def people_db(self, model: str | None = None) -> PeopleDB:
+        """The face gallery of a face model (default: the one chosen in settings).
+
+        Each model has its own vectors: people.json / people_<model>.json, or
+        the face_embeddings.model column in the database.
+        """
+        model = model or config.FACE_RECOGNIZER
+        database = self.database()
+        with self._lock:
+            if model not in self._people_dbs:
+                if database is not None:
+                    from .storage.database import SqlPeopleDB
+                    self._people_dbs[model] = SqlPeopleDB(database, model)
+                else:
+                    self._people_dbs[model] = PeopleDB(people_db_path(model))
+            return self._people_dbs[model]
+
+    @property
+    def _people_db(self):  # old name, kept for code that resets it
+        return self._people_dbs.get(config.FACE_RECOGNIZER)
+
+    @_people_db.setter
+    def _people_db(self, value):
+        if value is None:
+            self._people_dbs.clear()
+        else:
+            self._people_dbs[config.FACE_RECOGNIZER] = value
 
     def wardrobe(self) -> WardrobeLog:
         with self._lock:
@@ -307,31 +427,62 @@ class PipelineFactory:
         if options.enable_face_detection or options.enable_face_recognition:
             face_detector = FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE)
 
+        tracker = self._tracker_for  # chosen once the detector knows its backend
+        scheduler = None
+        if config.MOTION_GATE:
+            scheduler = DetectionScheduler(MotionGate(), idle_check_sec=config.IDLE_CHECK_SEC)
         return FrameProcessor(
             preprocess=FramePreprocessor(options.rotate, options.long_side),
-            detector=PersonDetector(config.MODEL_PATH, config.CONFIDENCE,
-                                    imgsz=config.YOLO_IMGSZ, half=config.YOLO_HALF),
+            detector=PersonDetector(person_model_path(), config.CONFIDENCE,
+                                    imgsz=config.YOLO_IMGSZ, half=config.YOLO_HALF,
+                                    backend=config.YOLO_BACKEND, tracker=tracker),
+            scheduler=scheduler,
+            smart_faces=config.SMART_FACES,
+            face_every=config.FACE_EVERY,
+            face_full_res=config.FACE_FULL_RES,
             face_detector=face_detector,
             recorder=self._recorder(options, on_record, identity),
-            direction_tracker=DirectionTracker() if options.enable_direction else None,
+            direction_tracker=self._direction_tracker(options),
             vlm_par=self.vlm_par() if options.enable_vlm_par else None,
             vlm_min_frames=config.VLM_PAR_MIN_FRAMES,  # read now: may be changed from the web
             identity=identity,
             vlm_pool=self.vlm_pool() if options.enable_vlm_par else None,
         )
 
-    def _recorder(self, options: CameraOptions, on_record, identity=None) -> PersonRecorder | None:
-        if not options.save_csv:
+    @staticmethod
+    def _tracker_for(backend: str) -> str:
+        """BoT-SORT settings (perf/backend.py) for this detector backend."""
+        reid_model = config.REID_MODEL
+        if reid_model == "auto" and backend != "pytorch":
+            reid_model = "yolo26n-reid.onnx"  # OpenVINO YOLO has no features to reuse
+        if reid_model != "auto":
+            reid_model = str(Path(config.MODELS_DIR) / reid_model)  # downloaded there by Ultralytics
+        return tracker_config(Path(config.OUTPUT_DIR) / "cache", config.TRACK_BUFFER, config.TRACKER_STATIC,
+                              reid=config.TRACKER_REID, reid_model=reid_model)
+
+    @staticmethod
+    def _direction_tracker(options: CameraOptions):
+        if not options.enable_direction:
             return None
-        if config.CSV_PATH and options.csv_tag is None:
+        line = DoorLine.from_dict(options.door_line)
+        return LineCrossCounter(line) if line else DirectionTracker()
+
+    def _recorder(self, options: CameraOptions, on_record, identity=None) -> PersonRecorder | None:
+        db_log = self.log_writer()
+        if not options.save_csv and db_log is None:
+            return None
+        if not options.save_csv:
+            csv_log = None
+        elif config.CSV_PATH and options.csv_tag is None:
             csv_log = CsvLog(config.CSV_PATH)
         else:
             csv_log = DailyCsvLog(config.OUTPUT_DIR, options.csv_tag)
         face_identifier = None
         if options.enable_face_recognition:
-            recognizer = FaceRecognizer(config.FACE_RECOGNITION_MODEL_PATH,
-                                        config.FACE_MATCH_THRESHOLD)
-            face_identifier = FaceIdentifier(recognizer, self.people_db())
+            recognizer = face_models.create_recognizer()  # SFace or ArcFace (settings)
+            face_identifier = FaceIdentifier(recognizer, self.people_db(recognizer.model_key),
+                                             votes=config.FACE_VOTES,
+                                             min_face_px=config.FACE_MIN_SIZE)
         return PersonRecorder(
             csv_log,
             CropSaver(config.CROPS_DIR) if options.save_crops else None,
@@ -341,4 +492,7 @@ class PipelineFactory:
             on_record=on_record,
             identity_lookup=identity.lookup if identity else None,
             camera=options.camera or (options.csv_tag or ""),
+            db_log=db_log,
+            person_ids=self.people_db().person_id if db_log else None,
+            log_cooldown_sec=config.LOG_COOLDOWN_SEC,
         )

@@ -106,8 +106,15 @@ class FramePreprocessor:
         self.long_side = long_side
 
     def __call__(self, frame: Frame) -> Frame:
+        return self.scale(self.upright(frame))
+
+    def upright(self, frame: Frame) -> Frame:
+        """Rotated only, at the camera's own resolution."""
         if frame is None or frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("expected a BGR colour frame")
         if self.rotation is not None:
             frame = cv2.rotate(frame, self.rotation)
-        return scale_to_long_side(frame, self.long_side)
+        return frame
+
+    def scale(self, upright: Frame) -> Frame:
+        return scale_to_long_side(upright, self.long_side)

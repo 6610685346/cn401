@@ -1,33 +1,51 @@
 {% extends "base.html" %}
+{% load ui %}
 {% block title %}ตั้งค่าระบบ · CN401{% endblock %}
 {% block content %}
-<h1>ตั้งค่าระบบ</h1>
-<p class="sub">ใช้กับทุกกล้อง · ค่าที่ต่างจากค่าเริ่มต้นจะถูกเก็บใน <span class="mono">{{ settings_path }}</span>
-  · ค่าที่มีป้าย <span class="badge">connect.py</span> มีผลกับ connect.py ด้วย (ตอนเปิดครั้งถัดไป)</p>
-{% if meta.updated_at %}<p class="small muted">แก้ล่าสุด {{ meta.updated_at }}{% if meta.updated_by %} โดย {{ meta.updated_by }}{% endif %}</p>{% endif %}
-<p class="small muted">ค่าต่อกล้อง (หมุนภาพ, ขนาดประมวลผล, จดจำหน้า, VLM-PAR) อยู่ในปุ่ม "ตั้งค่า" ของแต่ละกล้อง</p>
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "settings" %} ใช้กับทุกกล้อง</span>
+    <h1>ตั้งค่าระบบ</h1>
+    <p class="sub">ค่าที่ต่างจากค่าเริ่มต้นจะถูกเก็บใน <span class="mono">{{ settings_path }}</span>
+      · ค่าที่มีป้าย <span class="badge">connect.py</span> มีผลกับ connect.py ด้วย (ตอนเปิดครั้งถัดไป)
+      · ค่าต่อกล้อง (หมุนภาพ, ขนาดประมวลผล, จดจำหน้า, VLM-PAR) อยู่ในปุ่ม "ตั้งค่า" ของแต่ละกล้อง</p>
+    {% if meta.updated_at %}<p class="small muted" style="margin:6px 0 0">{% icon "clock" %} แก้ล่าสุด {{ meta.updated_at }}{% if meta.updated_by %} โดย {{ meta.updated_by }}{% endif %}</p>{% endif %}
+  </div>
+  <div class="actions">
+    <form method="post" onsubmit="return confirm('กลับไปใช้ค่าเริ่มต้นทั้งหมด?')">
+      {% csrf_token %}<input type="hidden" name="reset" value="1">
+      <button class="btn danger" type="submit">{% icon "rotate-ccw" %} กลับเป็นค่าเริ่มต้นทั้งหมด</button>
+    </form>
+  </div>
+</div>
+
+{% if gallery %}
+<div class="panel gallery-status" id="gallery-status" data-url="{% url 'api_gallery_status' %}" data-running="{{ gallery.running|yesno:'1,0' }}" style="margin-bottom:18px">
+  {% include "cameras/gallery_status.html" %}
+</div>
+{% endif %}
 
 <form method="post" novalidate>
   {% csrf_token %}
   <div class="grid settings-grid">
   {% for group, fields in form.groups %}
     <div class="panel">
-      <h2>{{ group }}</h2>
+      <div class="panel-head"><h2>{% if group == "โมเดล" %}{% icon "cpu" %}{% elif group == "เมนู" %}{% icon "layout-grid" %}{% elif group == "ประสิทธิภาพ" %}{% icon "gauge" %}{% elif group == "ความเร็ว" %}{% icon "activity" %}{% elif group == "การตรวจจับคน" %}{% icon "users" %}{% elif group == "ใบหน้า" %}{% icon "scan-face" %}{% elif group == "การบันทึก" %}{% icon "save" %}{% else %}{% icon "map" %}{% endif %} {{ group }}</h2></div>
       {% for field in fields %}
         {% with s=field.field.setting %}
-        <div class="field">
+        <div class="field setting">
           {% if s.is_bool %}
             <label class="check">{{ field }} {{ field.label }}</label>
           {% else %}
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>
             <div class="row" style="flex-wrap:nowrap">{{ field }}
-              {% if s.min is not None %}<span class="small muted" style="white-space:nowrap">{{ s.min }}–{{ s.max }}</span>{% endif %}</div>
+              {% if s.min is not None and not s.is_choice %}<span class="small muted" style="white-space:nowrap">ช่วง {{ s.min }}–{{ s.max }}</span>{% endif %}</div>
           {% endif %}
           <div class="help">{{ field.help_text }}</div>
-          <div class="help">ค่าเริ่มต้น: <b>{% if s.is_bool %}{{ field.field.default|yesno:"เปิด,ปิด" }}{% else %}{{ field.field.default }}{% endif %}</b>
+          <div class="help row" style="gap:6px">ค่าเริ่มต้น: <b>{% if s.is_bool %}{{ field.field.default|yesno:"เปิด,ปิด" }}{% elif s.is_choice %}{{ field.field.default }}{% else %}{{ field.field.default }}{% endif %}</b>
             {% if s.key in overridden %}<span class="badge on">ปรับแล้ว</span>{% endif %}
             {% if s.cli %}<span class="badge">connect.py</span>{% endif %}
-            {% if not s.restart %}<span class="badge">มีผลทันที</span>{% endif %}</div>
+            {% if not s.restart %}<span class="badge accent">มีผลทันที</span>{% endif %}</div>
           {% for e in field.errors %}<div class="err">{{ e }}</div>{% endfor %}
         </div>
         {% endwith %}
@@ -35,13 +53,26 @@
     </div>
   {% endfor %}
   </div>
-  <div class="row" style="margin-top:16px">
-    <button class="btn primary" type="submit">บันทึก</button>
+  <div class="save-bar">
+    <button class="btn primary" type="submit">{% icon "save" %} บันทึก</button>
     <span class="small muted">ค่าที่ไม่มีป้าย "มีผลทันที" จะรีสตาร์ทกล้องที่รันอยู่ ({{ cameras_running }} ตัว) ให้อัตโนมัติ ภาพสดจะหายไปไม่กี่วินาที</span>
   </div>
 </form>
-<form method="post" style="margin-top:12px" onsubmit="return confirm('กลับไปใช้ค่าเริ่มต้นทั้งหมด?')">
-  {% csrf_token %}<input type="hidden" name="reset" value="1">
-  <button class="btn danger" type="submit">กลับเป็นค่าเริ่มต้นทั้งหมด</button>
-</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const box = document.getElementById("gallery-status");
+  if (!box || box.dataset.running !== "1") return;
+  const tick = async () => {
+    try {
+      const r = await fetch(box.dataset.url + "?partial=1", { headers: { "X-Requested-With": "fetch" } });
+      const html = await r.text();
+      if (html) box.innerHTML = html;
+      if (html.includes("spin")) setTimeout(tick, 1500);
+    } catch (e) { setTimeout(tick, 4000); }
+  };
+  setTimeout(tick, 1500);
+})();
+</script>
 {% endblock %}

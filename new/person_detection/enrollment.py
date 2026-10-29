@@ -87,6 +87,26 @@ def _thumbnail(image: np.ndarray, box: Box, height: int = 112) -> bytes:
     return cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
 
+def person_dir(photos_root: str | Path, name: str) -> Path:
+    """models/photos/<name>/ (checked: the name can't point outside the folder)."""
+    root = Path(photos_root)
+    folder = (root / clean_name(name)).resolve()
+    if folder.parent != root.resolve():
+        raise EnrollError("ชื่อไม่ถูกต้อง")
+    return folder
+
+
+def photos_of(photos_root: str | Path, name: str) -> list[Path]:
+    """Enrollment photos of a person (no model needed)."""
+    try:
+        folder = person_dir(photos_root, name)
+    except EnrollError:
+        return []
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.iterdir() if p.suffix.lower() in PHOTO_TYPES)
+
+
 @dataclass
 class PhotoReport:
     """What happened to one photo."""
@@ -121,19 +141,10 @@ class FaceEnroller:
 
     # ---- photos on disk ------------------------------------------------------
     def person_dir(self, name: str) -> Path:
-        folder = (self.photos_root / clean_name(name)).resolve()
-        if folder.parent != self.photos_root.resolve():
-            raise EnrollError("ชื่อไม่ถูกต้อง")
-        return folder
+        return person_dir(self.photos_root, name)
 
     def photos_of(self, name: str) -> list[Path]:
-        try:
-            folder = self.person_dir(name)
-        except EnrollError:
-            return []
-        if not folder.is_dir():
-            return []
-        return sorted(p for p in folder.iterdir() if p.suffix.lower() in PHOTO_TYPES)
+        return photos_of(self.photos_root, name)
 
     # ---- one photo -------------------------------------------------------------
     def _read_face(self, report: PhotoReport, data: bytes) -> PhotoReport:
@@ -162,25 +173,32 @@ class FaceEnroller:
         return report
 
     # ---- enroll / remove -----------------------------------------------------------
-    def enroll(self, name: str, uploads: list[tuple[str, bytes]]) -> EnrollResult:
-        """Add photos for `name` (new or existing) and update people.json."""
+    def enroll(self, name: str, uploads: list[tuple[str, bytes]],
+               surname: str | None = None, id_number: str | None = None) -> EnrollResult:
+        """Add photos for `name` (new or existing) and update the face gallery
+        (people.json, or the database when DATABASE_URL is set)."""
         name = clean_name(name)
         if not uploads:
             raise EnrollError("กรุณาเลือกรูปอย่างน้อย 1 รูป")
-        return self._enroll(name, uploads)
+        return self._enroll(name, uploads, surname, id_number)
 
-    def enroll_folder(self, name: str) -> EnrollResult:
+    def enroll_folder(self, name: str, surname: str | None = None,
+                      id_number: str | None = None) -> EnrollResult:
         """Re-compute a person from the photos already in their folder."""
         name = clean_name(name)
         if not self.photos_of(name):
             raise EnrollError(f"ไม่มีรูปใน {self.person_dir(name)}")
-        return self._enroll(name, [])
+        return self._enroll(name, [], surname, id_number)
 
-    def _enroll(self, name: str, uploads: list[tuple[str, bytes]]) -> EnrollResult:
+    def _enroll(self, name: str, uploads: list[tuple[str, bytes]],
+                surname: str | None = None, id_number: str | None = None) -> EnrollResult:
         with self._lock:
             reports = [self._read_face(PhotoReport(filename, False, ""), data) for filename, data in uploads]
+            old_paths = {}
             for path in self.photos_of(name):  # photos added earlier
-                reports.append(self._read_face(PhotoReport(path.name, False, "", is_new=False), path.read_bytes()))
+                report = self._read_face(PhotoReport(path.name, False, "", is_new=False), path.read_bytes())
+                old_paths[id(report)] = path
+                reports.append(report)
 
             usable = [r for r in reports if r.ok]
             if not usable:
@@ -192,8 +210,16 @@ class FaceEnroller:
 
             embeddings = [r.embedding for r in usable]
             looks_like = self._closest_other_person(name, embeddings)
-            saved = self._save_new_photos(name, [r for r in usable if r.is_new])
-            self.people_db.enroll(name, embeddings)
+            new_reports = [r for r in usable if r.is_new]
+            saved = self._save_new_photos(name, new_reports)
+            paths = {**old_paths, **{id(r): p for r, p in zip(new_reports, saved)}}
+            try:
+                self.people_db.enroll(name, embeddings, image_paths=[paths.get(id(r)) for r in usable],
+                                      surname=surname, id_number=id_number)
+            except ValueError as exc:  # e.g. the ID number belongs to someone else
+                for path in saved:
+                    path.unlink(missing_ok=True)
+                raise EnrollError(str(exc)) from None
             return EnrollResult(name, reports, len(usable), saved, looks_like)
 
     def _drop_odd_ones_out(self, usable: list[PhotoReport]) -> None:
@@ -259,12 +285,119 @@ class FaceEnroller:
         return saved
 
     def remove(self, name: str) -> None:
-        """Forget a person: remove from people.json and delete their photos."""
+        """Forget a person: remove from every face model's gallery and delete their photos."""
         with self._lock:
             self.people_db.remove(name)
+            if isinstance(self.people_db, PeopleDB):  # the database version removes the person once
+                from .storage.people_db import people_db_path
+                from .vision.face_models import FACE_MODELS
+                for key in FACE_MODELS:
+                    path = people_db_path(key)
+                    if path != self.people_db.path and path.exists():
+                        PeopleDB(path).remove(name)
             try:
                 folder = self.person_dir(name)
             except EnrollError:
                 return
             if folder.is_dir():
                 shutil.rmtree(folder)
+
+
+# ------------------------------------------------------------- other face models
+def known_names(people_db, photos_root: str | Path) -> list[str]:
+    """Everyone registered under any face model: photo folders, the SFace
+    gallery (people.json) and, with a database, every active person."""
+    from .storage.people_db import people_db_path
+
+    names = set()
+    root = Path(photos_root)
+    if root.is_dir():
+        names.update(p.name for p in root.iterdir()
+                     if p.is_dir() and any(f.suffix.lower() in PHOTO_TYPES for f in p.iterdir()))
+    if hasattr(people_db, "all_names"):
+        names.update(people_db.all_names())
+    else:
+        from .vision.face_models import FACE_MODELS
+        for key in FACE_MODELS:
+            path = people_db_path(key)
+            if path.exists():
+                names.update(PeopleDB(path).names())
+    return sorted(names)
+
+
+def missing_names(people_db, photos_root: str | Path) -> list[str]:
+    """People registered under some face model but without a vector in `people_db`."""
+    have = set(people_db.gallery())
+    return [n for n in known_names(people_db, photos_root) if n not in have]
+
+
+def prepare_gallery(factory, model: str | None = None, log=print) -> GalleryReport | None:
+    """Make sure the face model's gallery has everybody (connect.py at start-up)."""
+    from . import config
+    from .vision.face_models import create_recognizer
+
+    model = model or config.FACE_RECOGNIZER
+    people_db = factory.people_db(model)
+    missing = missing_names(people_db, config.PHOTOS_DIR)
+    if not missing:
+        return None
+    log(f"Face model {model}: making face vectors for {len(missing)} people from their photos...")
+    enroller = FaceEnroller(FaceDetector(config.FACE_MODEL_PATH, config.FACE_CONFIDENCE),
+                            create_recognizer(model), people_db, config.PHOTOS_DIR)
+    report = GalleryBuilder(enroller).run(missing)
+    log(f"  added {len(report.added)}" + (f", no photos (enroll again): {', '.join(report.no_photos)}" if report.no_photos else "")
+        + (f", failed: {report.failed}" if report.failed else ""))
+    return report
+
+
+@dataclass
+class GalleryReport:
+    model: str
+    total: int = 0
+    done: int = 0
+    added: list[str] = field(default_factory=list)
+    no_photos: list[str] = field(default_factory=list)  # must be enrolled again with photos
+    failed: dict[str, str] = field(default_factory=dict)
+    current: str = ""
+
+
+class GalleryBuilder:
+    """Fills one face model's gallery from the enrollment photos.
+
+    Switching from SFace to ArcFace needs every person's face vector made
+    again by the new model (vectors of two models can't be compared). The
+    photos in models/photos/<name>/ are run through the new model, exactly
+    like enrolling them again; person names and database ids don't change.
+    People enrolled without photos (old people.json made by enroll.py from
+    a folder that was deleted) are listed in `no_photos`.
+    """
+
+    def __init__(self, enroller: FaceEnroller):
+        self.enroller = enroller
+
+    def missing(self) -> list[str]:
+        return missing_names(self.enroller.people_db, self.enroller.photos_root)
+
+    def run(self, names: list[str] | None = None, progress=None) -> GalleryReport:
+        model = getattr(self.enroller.recognizer, "model_key", "sface")
+        names = self.missing() if names is None else names
+        report = GalleryReport(model, total=len(names))
+        for name in names:
+            report.current = name
+            if progress:
+                progress(report)
+            try:
+                if not self.enroller.photos_of(name):
+                    report.no_photos.append(name)
+                else:
+                    self.enroller.enroll_folder(name)
+                    report.added.append(name)
+            except EnrollError as exc:
+                report.failed[name] = str(exc)
+            except Exception as exc:  # keep going with the next person
+                report.failed[name] = f"{type(exc).__name__}: {exc}"
+            report.done += 1
+        report.current = ""
+        if progress:
+            progress(report)
+        return report

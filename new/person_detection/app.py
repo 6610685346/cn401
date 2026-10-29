@@ -130,12 +130,17 @@ def cameras() -> dict:
 
 def build_processor(factory: PipelineFactory, camera: str) -> FrameProcessor:
     """One processor per camera, each with its own YOLO tracker and face detector."""
-    return factory.create(CameraOptions(camera=camera))
+    return factory.create(CameraOptions(camera=camera, door_line=config.DOOR_LINES.get(camera)))
 
 
 def main() -> None:
     factory = PipelineFactory()
+    print(f"Models: person={config.PERSON_MODEL}, face={config.FACE_RECOGNIZER}"
+          + (f", ReID={config.REID_MODEL}" if config.TRACKER_REID else ""))
     if config.ENABLE_FACE_RECOGNITION:
+        if config.FACE_RECOGNIZER != "sface":  # e.g. ArcFace: vectors made from the enrollment photos
+            from .enrollment import prepare_gallery
+            prepare_gallery(factory)
         names = factory.people_db().names()
         print(f"Loaded {len(names)} enrolled people: {names}")
     if config.SAVE_CSV:

@@ -25,3 +25,13 @@ Django==5.2.7
 uvicorn==0.40.0
 whitenoise==6.11.0
 cryptography==46.0.3
+
+# Optional speed-ups / models (PERFORMANCE.md):
+#   openvino==2026.4.1   YOLO ~1.5x faster on a computer without an NVIDIA GPU (YOLO_BACKEND="auto")
+#   onnxruntime          only for a separate ReID model (REID_MODEL="yolo26n-reid.onnx"); Ultralytics
+#                        installs it by itself the first time if it is missing
+# ArcFace face models need nothing extra (OpenCV runs them); they download on first use.
+
+# PostgreSQL database (optional: only used when DATABASE_URL is set; see DATABASE.md)
+SQLAlchemy==2.0.44
+psycopg[binary]==3.2.12

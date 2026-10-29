@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% load static ui %}
+{% block title %}ทดสอบด้วยวิดีโอ · CN401{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">{% icon "flask-conical" %} ทดสอบ · จูน · วัดผล</span>
+    <h1>ทดสอบด้วยวิดีโอ</h1>
+    <p class="sub">อัปโหลดวิดีโอที่ถ่ายไว้ ระบบจะเล่นผ่านขั้นตอนเดียวกับกล้องจริงทุกอย่าง (ตรวจจับ ติดตาม จำหน้า นับเข้า/ออก)
+      แล้วแสดงทุกแถวที่ระบบจะบันทึก ให้ตรวจว่าถูกหรือผิด จากนั้นคำนวณตัวชี้วัดตามรายงานให้ทันที
+      · ผลไม่ถูกเขียนลงประวัติจริง</p>
+  </div>
+  {% if groups %}<div class="actions"><a class="btn" href="{% url 'eval_report' %}?t={{ threshold }}">{% icon "download" %} ตารางสรุป (CSV)</a></div>{% endif %}
+</div>
+
+<div class="steps-bar">
+  <div class="step"><span>1</span><div><b>อัปโหลด</b><small>เลือกชุด train หรือ test</small></div></div>
+  <div class="step"><span>2</span><div><b>ระบบจำลองการทำงาน</b><small>เหมือนกล้องจริง</small></div></div>
+  <div class="step"><span>3</span><div><b>ตรวจผล</b><small>กดถูก/ผิด ทีละแถว</small></div></div>
+  <div class="step"><span>4</span><div><b>ดูตัวชี้วัด / จูนค่า</b><small>Precision · FAR · FRR · เข้า/ออก</small></div></div>
+</div>
+
+{% if user.is_staff %}
+<div class="panel" style="margin-bottom:22px">
+  <div class="panel-head"><h2>{% icon "film" %} อัปโหลดวิดีโอใหม่</h2></div>
+  <form method="post" enctype="multipart/form-data" id="upload-form">
+    {% csrf_token %}
+    <div class="row" style="align-items:flex-start;gap:22px">
+      <div style="flex:1.3;min-width:280px">
+        <div class="drop" id="drop">
+          <input type="file" name="video" id="video" accept="{{ accept }},video/*" required>
+          {% icon "upload" %}
+          <div><b>ลากไฟล์วิดีโอมาวาง</b> หรือคลิกเพื่อเลือก</div>
+          <div class="small" style="margin-top:2px">MP4 · AVI · MOV · MKV · WEBM · สูงสุด 4 GB</div>
+          <div class="small" id="picked" style="margin-top:6px;color:var(--text)"></div>
+        </div>
+        <div class="progress" id="upload-progress" hidden><div style="width:0%"></div></div>
+      </div>
+      <div style="flex:1;min-width:260px">
+        <div class="field"><label for="name">ชื่อวิดีโอ</label>
+          <input type="text" name="name" id="name" maxlength="120" placeholder="เช่น ประตูหน้า เช้า 24 ต.ค."></div>
+        <div class="field"><label>ชุดข้อมูล</label>
+          <div class="seg">{% for v, t in split_choices %}<label><input type="radio" name="split" value="{{ v }}" {% if v == "test" %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}</div>
+          <div class="help">train = ใช้หาค่า threshold ที่ดีที่สุด · test = ใช้รายงานผล (อย่าใช้วิดีโอเดียวกันทั้งสองชุด)</div></div>
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label for="lighting">สภาพแสง</label>
+            <select name="lighting" id="lighting">{% for v, t in lighting_choices %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
+          <div class="field" style="flex:1"><label for="distance">ระยะจากกล้อง</label>
+            <select name="distance" id="distance">{% for v, t in distance_choices %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="gap:22px;margin:4px 0 14px">
+      <label class="check"><input type="checkbox" name="realtime" checked> จำลองเวลาจริง (ทิ้งเฟรมเมื่อประมวลผลไม่ทัน เหมือนกล้องจริง)</label>
+      <label class="check"><input type="checkbox" name="direction"> นับทิศทางเข้า/ออก</label>
+      <select name="door_camera" style="width:auto;padding:6px 10px" title="เส้นประตูที่ใช้นับ">
+        <option value="">ใช้โซนเดิมในโค้ด</option>
+        {% for c in door_cameras %}<option value="{{ c.id }}">ใช้เส้นประตูของ {{ c.name }}</option>{% endfor %}
+      </select>
+      <label class="check"><input type="checkbox" name="vlm"> VLM-PAR (ช้าลงมาก)</label>
+    </div>
+    <details class="tips small" style="margin-bottom:14px">
+      <summary>ตั้งค่าขั้นสูง</summary>
+      <div class="row" style="flex-wrap:nowrap;margin-top:10px">
+        <div class="field" style="flex:1"><label for="rotate">หมุนภาพ</label>
+          <select name="rotate" id="rotate">{% for v, t in rotate_choices %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
+        <div class="field" style="flex:1"><label for="long_side">ขนาดที่ใช้ประมวลผล</label>
+          <select name="long_side" id="long_side">{% for v, t in long_side_choices %}<option value="{{ v }}" {% if v == 960 %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      </div>
+      <p class="muted" style="margin:0">ค่าอื่น (เกณฑ์ใบหน้า, frame skip, ความมั่นใจ ฯลฯ) ใช้ตามหน้า "ตั้งค่าระบบ" ตอนที่กดรัน
+        · ประมวลผลบนเครื่องเดียวกับกล้องที่รันอยู่ ถ้ารันพร้อมกันผลความเร็วจะต่ำกว่าปกติ</p>
+    </details>
+    <button class="btn primary" type="submit" id="upload-btn">{% icon "play" %} อัปโหลดและเริ่มทดสอบ</button>
+  </form>
+</div>
+{% endif %}
+
+{% if groups %}
+<div class="panel" style="margin-bottom:22px">
+  <div class="panel-head">
+    <h2>{% icon "chart-line" %} สรุปผล (ทุกวิดีโอที่ประมวลผลเสร็จ)</h2>
+    <form method="get" class="row small" style="gap:6px">เกณฑ์ใบหน้า τ
+      <input type="number" name="t" value="{{ threshold }}" step="0.01" min="0.05" max="0.95" style="width:90px;padding:5px 8px">
+      <button class="btn sm">คำนวณใหม่</button></form>
+  </div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>กลุ่ม</th><th>วิดีโอ</th><th>ตรวจแล้ว</th><th>Precision</th><th>Recall</th><th>F1</th>
+      <th>FAR</th><th>FRR</th><th>Accuracy</th><th>MisID</th><th>Coverage</th><th>เข้า P/R</th><th>ออก P/R</th><th>หน่วง (s)</th></tr></thead>
+    <tbody>
+    {% for g in groups %}{% include "cameras/eval_summary_row.html" with g=g strong=True %}{% endfor %}
+    {% for g in by_condition %}{% include "cameras/eval_summary_row.html" with g=g %}{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted" style="margin:10px 0 0">รวมทุกวิดีโอแบบนับรวม (micro average) · แยกตามแสงและระยะเฉพาะชุด test · ดูนิยามตัวชี้วัดได้ในรายงานหัวข้อตัวชี้วัด</p>
+</div>
+{% endif %}
+
+<div class="panel" style="margin-bottom:22px">
+  <div class="panel-head"><h2>{% icon "sliders-horizontal" %} จูนเกณฑ์ความเหมือนใบหน้าจากชุด train</h2>
+    <span class="badge">ตอนนี้ระบบใช้ τ = {{ current_threshold }} ({{ face_model }})</span></div>
+  <p class="small muted" style="margin-top:-6px">ใช้เฉพาะวิดีโอชุด train ที่ประมวลผลด้วยโมเดลใบหน้าที่ใช้อยู่ตอนนี้ ({{ model_label }}) เพราะคะแนนของแต่ละโมเดลเทียบกันไม่ได้</p>
+  {% if sweep and chart %}
+  <div class="row" style="align-items:flex-start;gap:22px">
+    <div style="flex:1.3;min-width:300px">
+      <svg viewBox="0 0 520 220" class="chart" role="img" aria-label="กราฟ FAR และ FRR ตามค่า threshold">
+        {% for t in chart.yticks %}<line x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid-line"/>
+          <text x="{{ chart.left|add:'-8' }}" y="{{ t.y }}" class="tick" text-anchor="end" dominant-baseline="middle">{{ t.label }}</text>{% endfor %}
+        {% for t in chart.xticks %}<text x="{{ t.x }}" y="{{ chart.bottom|add:'18' }}" class="tick" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+        {% if chart.current_x %}<line x1="{{ chart.current_x }}" x2="{{ chart.current_x }}" y1="{{ chart.top }}" y2="{{ chart.bottom }}" class="mark-current"/>{% endif %}
+        {% if chart.best_x %}<line x1="{{ chart.best_x }}" x2="{{ chart.best_x }}" y1="{{ chart.top }}" y2="{{ chart.bottom }}" class="mark-best"/>{% endif %}
+        <polyline points="{{ chart.far }}" class="line-far"/>
+        <polyline points="{{ chart.frr }}" class="line-frr"/>
+        {% for p in chart.far_pts %}<circle cx="{{ p.x }}" cy="{{ p.y }}" r="3" class="dot-far"/>{% endfor %}
+        {% for p in chart.frr_pts %}<circle cx="{{ p.x }}" cy="{{ p.y }}" r="3" class="dot-frr"/>{% endfor %}
+      </svg>
+      <div class="legend small"><span><i class="sw far"></i>FAR (ใส่ชื่อคนนอก)</span><span><i class="sw frr"></i>FRR (คนที่ลงทะเบียนเป็น unknown)</span>
+        <span><i class="sw best"></i>ค่าแนะนำ</span><span><i class="sw current"></i>τ ที่ใช้คำนวณตาราง</span></div>
+    </div>
+    <div style="flex:1;min-width:240px">
+      <p class="small muted" style="margin-top:0">จาก {{ sweep.genuine }} ครั้งของคนที่ลงทะเบียน และ {{ sweep.impostor }} ครั้งของคนนอก (เฉพาะแถวที่ตรวจแล้วและเห็นหน้า)</p>
+      {% if sweep.best %}
+      <div class="best-box">
+        <span class="small muted">ค่าที่ผิดพลาดรวมน้อยที่สุด (FAR + FRR)</span>
+        <b>τ = {{ sweep.best.threshold }}</b>
+        <span class="small">FAR {{ sweep.best.far|pct }} · FRR {{ sweep.best.frr|pct }}</span>
+        {% if user.is_staff %}
+        <form method="post" action="{% url 'eval_apply_threshold' %}" style="margin-top:10px">{% csrf_token %}
+          <input type="hidden" name="threshold" value="{{ sweep.best.threshold }}">
+          <button class="btn primary sm" {% if sweep.best.threshold == current_threshold %}disabled{% endif %}>{% icon "check" %} ใช้ค่านี้กับระบบ</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
+      <details class="small" style="margin-top:12px"><summary>ตารางทุกค่า</summary>
+        <table class="small" style="margin-top:6px"><thead><tr><th>τ</th><th>FAR</th><th>FRR</th><th>MisID</th></tr></thead><tbody>
+        {% for r in sweep.rows %}<tr{% if sweep.best and r.threshold == sweep.best.threshold %} style="font-weight:700"{% endif %}><td>{{ r.threshold }}</td><td>{{ r.far|pct }}</td><td>{{ r.frr|pct }}</td><td>{{ r.misid|pct }}</td></tr>{% endfor %}
+        </tbody></table></details>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">ยังไม่มีข้อมูลพอ — อัปโหลดวิดีโอเป็น <b>ชุด train</b> แล้วตรวจชื่อคนในหน้าผลให้ครบ (ต้องมีทั้งคนที่ลงทะเบียนและคนนอก)
+    ระบบจะลองค่า τ ตั้งแต่ 0.30 ถึง 0.50 แล้วแนะนำค่าที่ผิดน้อยที่สุด</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>{% icon "list-checks" %} วิดีโอทั้งหมด</h2><span class="badge">{{ videos|length }} วิดีโอ</span></div>
+  {% if videos %}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>วิดีโอ</th><th>ชุด</th><th>เงื่อนไข</th><th>โมเดล</th><th>สถานะ</th><th>แถว</th><th>ตรวจแล้ว</th><th>อัปโหลด</th><th></th></tr></thead>
+    <tbody>
+    {% for v in videos %}
+      <tr data-video="{{ v.id }}" data-status="{{ v.status }}" data-status-url="{% url 'api_eval_status' v.id %}">
+        <td><a href="{% url 'evaluate_detail' v.id %}"><b>{{ v.name }}</b></a></td>
+        <td><span class="badge {% if v.split == 'train' %}accent{% endif %}">{{ v.get_split_display }}</span></td>
+        <td class="small">{{ v.get_lighting_display|default:"" }}{% if v.lighting and v.distance %} · {% endif %}{{ v.get_distance_display|default:"" }}</td>
+        <td class="small">{{ v.model_label|default:"–" }}{% if v.runs %} <span class="badge" title="ประมวลผลมาแล้ว {{ v.runs|length }} รอบก่อนหน้า">+{{ v.runs|length }} รอบ</span>{% endif %}</td>
+        <td><span class="pill s-{% if v.status == 'done' %}running{% elif v.status == 'error' %}error{% elif v.status == 'cancelled' %}stopped{% else %}loading{% endif %}" data-field="status">{{ v.get_status_display }}</span>
+          {% if v.status == "running" or v.status == "queued" %}<div class="progress sm"><div style="width:{% widthratio v.progress 1 100 %}%"></div></div>{% endif %}</td>
+        <td data-field="events">{{ v.events.all|length }}</td>
+        <td class="small">{% with n=v.events.all|length %}{% if n %}{{ v.reviewed_count }}/{{ n }}{% else %}–{% endif %}{% endwith %}</td>
+        <td class="small muted">{{ v.created_at|date:"j M H:i" }}</td>
+        <td><a class="btn sm" href="{% url 'evaluate_detail' v.id %}">{% icon "eye" %} เปิด</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><img src="{% static 'img/empty-history.svg' %}" alt=""><h2>ยังไม่มีวิดีโอ</h2>
+    <p>ถ่ายวิดีโอจากกล้องจริงในห้องทดสอบ (เช่น ให้คนที่ลงทะเบียนและไม่ได้ลงทะเบียนเดินผ่านหลายรอบ) แล้วอัปโหลดที่ด้านบน</p></div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'evaluate.js' %}"></script>
+{% endblock %}

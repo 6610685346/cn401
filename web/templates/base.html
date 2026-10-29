@@ -1,54 +1,86 @@
-{% load static %}<!doctype html>
+{% load static ui %}<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}CN401 Portal{% endblock %}</title>
+  <link rel="icon" href="{% static 'favicon.svg' %}" type="image/svg+xml">
+  <link rel="preload" href="{% static 'fonts/ibm-plex-sans-thai-thai-400-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{% static 'portal.css' %}">
 </head>
 <body>
+{% block body %}
 {% if user.is_authenticated and portal_mode == "web" %}
 {# LAN web page: history only. The other pages exist only in the desktop app. #}
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="{% url 'history' %}">CN401 ตรวจจับคน</a>
-    <nav><a href="{% url 'history' %}" class="on">ประวัติ</a></nav>
+    <a class="brand" href="{% url 'history' %}"><img src="{% static 'img/logo.svg' %}" alt=""><span><b>CN401</b></span></a>
+    {% with u=request.resolver_match.url_name %}
+    <nav><a href="{% url 'presence' %}" class="{% if u == 'presence' %}on{% endif %}">{% icon "door-open" %} ใครอยู่ตอนนี้</a>
+      <a href="{% url 'history' %}" class="{% if u == 'history' %}on{% endif %}">{% icon "history" %} ประวัติ</a></nav>
+    {% endwith %}
     <div class="who">
-      {{ user.get_username }}
-      <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">ออกจากระบบ</button></form>
+      <span class="avatar">{{ user.get_username|initial }}</span>
+      <span class="who-text small">{{ user.get_username }}</span>
+      <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn sm">{% icon "log-out" %} ออกจากระบบ</button></form>
     </div>
   </div>
 </header>
+<div class="main">
 {% elif user.is_authenticated %}
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="{% url 'dashboard' %}">CN401 ตรวจจับคน</a>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'dashboard' %}">
+      <img src="{% static 'img/logo.svg' %}" alt="">
+      <span><b>CN401 Vision</b><span>ระบบตรวจจับคนเข้า-ออก</span></span>
+    </a>
+    {% with u=request.resolver_match.url_name %}
+    <div class="nav-label">เฝ้าดู</div>
     <nav>
-      {% with u=request.resolver_match.url_name %}
-      <a href="{% url 'dashboard' %}" class="{% if u == 'dashboard' or u == 'camera_live' or u == 'camera_calibrate' %}on{% endif %}">กล้อง IP</a>
-      <a href="{% url 'browser_camera' %}" class="{% if u == 'browser_camera' %}on{% endif %}">กล้องของเครื่องนี้</a>
-      <a href="{% url 'floor_map' %}" class="{% if u == 'floor_map' %}on{% endif %}">แผนผัง</a>
-      <a href="{% url 'history' %}" class="{% if u == 'history' %}on{% endif %}">ประวัติ</a>
-      <a href="{% url 'people' %}" class="{% if u == 'people' %}on{% endif %}">คนที่ลงทะเบียน</a>
-      {% if user.is_staff %}<a href="{% url 'settings_page' %}" class="{% if u == 'settings_page' %}on{% endif %}">ตั้งค่าระบบ</a>
-      <a href="{% url 'admin:index' %}">ผู้ดูแล</a>{% endif %}
-      {% endwith %}
+      <a href="{% url 'presence' %}" class="{% if u == 'presence' %}on{% endif %}">{% icon "door-open" %} ใครอยู่ตอนนี้</a>
+      <a href="{% url 'dashboard' %}" class="{% if u == 'dashboard' or u == 'camera_live' or u == 'camera_calibrate' or u == 'camera_door' or u == 'camera_add' or u == 'camera_edit' %}on{% endif %}">{% icon "cctv" %} กล้อง IP</a>
+      <a href="{% url 'camera_wall' %}" class="{% if u == 'camera_wall' %}on{% endif %}">{% icon "layout-grid" %} ดูหลายกล้อง</a>
+      <a href="{% url 'browser_camera' %}" class="{% if u == 'browser_camera' %}on{% endif %}">{% icon "webcam" %} กล้องของเครื่องนี้</a>
+      <a href="{% url 'floor_map' %}" class="{% if u == 'floor_map' %}on{% endif %}">{% icon "map" %} แผนผัง</a>
     </nav>
-    {% if is_app and user.get_username == "cn401-app" %}
-    <div class="who small muted">แอปบนเครื่องนี้</div>
-    {% else %}
-    <div class="who">
-      {{ user.get_username }}
-      <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">ออกจากระบบ</button></form>
-    </div>
+    <div class="nav-label">ข้อมูล</div>
+    <nav>
+      <a href="{% url 'history' %}" class="{% if u == 'history' %}on{% endif %}">{% icon "history" %} ประวัติ</a>
+      <a href="{% url 'people' %}" class="{% if u == 'people' or u == 'person_enroll' %}on{% endif %}">{% icon "users" %} คนที่ลงทะเบียน</a>
+      {% if show_eval_menu or u == 'evaluate' or u == 'evaluate_detail' %}<a href="{% url 'evaluate' %}" class="{% if u == 'evaluate' or u == 'evaluate_detail' %}on{% endif %}">{% icon "flask-conical" %} ทดสอบด้วยวิดีโอ</a>{% endif %}
+    </nav>
+    {% if user.is_staff %}
+    <div class="nav-label">ระบบ</div>
+    <nav>
+      <a href="{% url 'settings_page' %}" class="{% if u == 'settings_page' %}on{% endif %}">{% icon "settings" %} ตั้งค่าระบบ</a>
+      <a href="{% url 'admin:index' %}">{% icon "shield-check" %} ผู้ดูแล</a>
+    </nav>
     {% endif %}
-  </div>
-</header>
+    {% endwith %}
+    <div class="side-foot">
+      {% if is_app and user.get_username == "cn401-app" %}
+      <div class="who"><span class="avatar">{% icon "monitor-check" %}</span>
+        <span class="who-text"><span class="who-name">แอปบนเครื่องนี้</span><span class="who-role">ผู้ดูแลระบบ</span></span></div>
+      {% else %}
+      <div class="who">
+        <span class="avatar">{{ user.get_username|initial }}</span>
+        <span class="who-text"><span class="who-name">{{ user.get_username }}</span>
+          <span class="who-role">{% if user.is_staff %}ผู้ดูแลระบบ{% else %}ผู้ใช้งาน{% endif %}</span></span>
+        <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}
+          <button class="icon-btn" title="ออกจากระบบ" aria-label="ออกจากระบบ">{% icon "log-out" %}</button></form>
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+  <div class="main">
 {% endif %}
 <main class="wrap">
-  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{% if m.tags == "error" %}{% icon "circle-x" %}{% elif m.tags == "warning" %}{% icon "triangle-alert" %}{% else %}{% icon "circle-check" %}{% endif %}<span>{{ m }}</span></li>{% endfor %}</ul>{% endif %}
   {% block content %}{% endblock %}
 </main>
+{% if user.is_authenticated and portal_mode == "web" %}</div>{% elif user.is_authenticated %}</div></div>{% endif %}
+{% endblock %}
 {% block scripts %}{% endblock %}
 </body>
 </html>
