@@ -25,6 +25,22 @@
 </div>
 {% endif %}
 
+<div class="panel floor-switch" style="margin-bottom:18px">
+  <div class="row" style="justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+    <div>
+      <h2 style="margin:0">{% icon "map" %} ระบบแผนผัง
+        {% if floor_map_on %}<span class="badge on">เปิดอยู่</span>{% else %}<span class="badge">ปิดอยู่</span>{% endif %}</h2>
+      <p class="small muted" style="margin:6px 0 0">หน้าแผนผัง · ปรับเทียบพื้น · รวมคนข้ามกล้อง (เลข G)
+        · ปิด = แต่ละกล้องทำงานแยกกัน ค่าปรับเทียบที่ทำไว้ยังเก็บอยู่ · <span class="badge accent">มีผลทันที</span></p>
+    </div>
+    <form method="post" action="{% url 'floor_map_toggle' %}">
+      {% csrf_token %}
+      {% if floor_map_on %}<input type="hidden" name="on" value="0"><button class="btn" type="submit">{% icon "square" %} ปิดระบบแผนผัง</button>
+      {% else %}<input type="hidden" name="on" value="1"><button class="btn primary" type="submit">{% icon "play" %} เปิดระบบแผนผัง</button>{% endif %}
+    </form>
+  </div>
+</div>
+
 <form method="post" novalidate>
   {% csrf_token %}
   <div class="grid settings-grid">

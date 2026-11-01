@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .floor import FloorCalibration
 from .hub import GlobalInfo, IdentityHub, Observation, _known
 
@@ -13,12 +15,22 @@ class CameraLink:
     and writes back the global id and any name another camera recognised.
     """
 
-    def __init__(self, hub: IdentityHub, camera: str, calibration: FloorCalibration | None = None):
+    def __init__(self, hub: IdentityHub, camera: str, calibration: FloorCalibration | None = None,
+                 enabled: Callable[[], bool] | None = None):
         self.hub = hub
         self.camera = camera
         self.calibration = calibration  # may be replaced while running (re-calibrated)
+        # Asked every frame, so the floor plan can be switched on/off while running.
+        self.enabled = enabled or (lambda: True)
+        self._joined = False
 
     def __call__(self, result) -> None:
+        if not self.enabled():
+            if self._joined:  # just switched off: leave the hub (no G-numbers, no joining)
+                self.hub.forget_camera(self.camera)
+                self._joined = False
+            return
+        self._joined = True
         calibration = self.calibration
         observations = []
         for person in result.people:
@@ -41,6 +53,8 @@ class CameraLink:
                 person.name_from_other_camera = True
 
     def lookup(self, track_id: int) -> GlobalInfo | None:
+        if not self.enabled():
+            return None
         return self.hub.lookup(self.camera, track_id)
 
     def close(self) -> None:

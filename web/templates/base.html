@@ -42,7 +42,7 @@
       <a href="{% url 'dashboard' %}" class="{% if u == 'dashboard' or u == 'camera_live' or u == 'camera_calibrate' or u == 'camera_door' or u == 'camera_add' or u == 'camera_edit' %}on{% endif %}">{% icon "cctv" %} กล้อง IP</a>
       <a href="{% url 'camera_wall' %}" class="{% if u == 'camera_wall' %}on{% endif %}">{% icon "layout-grid" %} ดูหลายกล้อง</a>
       <a href="{% url 'browser_camera' %}" class="{% if u == 'browser_camera' %}on{% endif %}">{% icon "webcam" %} กล้องของเครื่องนี้</a>
-      <a href="{% url 'floor_map' %}" class="{% if u == 'floor_map' %}on{% endif %}">{% icon "map" %} แผนผัง</a>
+      {% if floor_map_on %}<a href="{% url 'floor_map' %}" class="{% if u == 'floor_map' %}on{% endif %}">{% icon "map" %} แผนผัง</a>{% endif %}
     </nav>
     <div class="nav-label">ข้อมูล</div>
     <nav>

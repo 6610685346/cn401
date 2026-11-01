@@ -7,7 +7,7 @@
     <a class="small" href="{% url 'evaluate' %}">{% icon "arrow-left" %} วิดีโอทั้งหมด</a>
     <h1 style="margin-top:6px">{{ video.name }}</h1>
     <div class="row small" style="gap:6px">
-      <span class="badge {% if video.split == 'train' %}accent{% endif %}">{{ split }}</span>
+      {% if eval_training %}<span class="badge {% if video.split == 'train' %}accent{% endif %}">{{ split }}</span>{% endif %}
       {% if lighting and lighting != "-" %}<span class="badge">แสง: {{ lighting }}</span>{% endif %}
       {% if distance and distance != "-" %}<span class="badge">ระยะ: {{ distance }}</span>{% endif %}
       {% if video.options.realtime %}<span class="badge">จำลองเวลาจริง</span>{% endif %}
@@ -130,7 +130,7 @@
                 {% for n in names %}<option value="{{ n }}" {% if e.gt_identity == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
               </select>
             </div>
-            {% if r.faces %}
+            {% if r.faces and eval_training %}
             <details class="enroll small">
               <summary>{% icon "user-plus" %} ลงทะเบียนคนนี้จากวิดีโอ ({{ r.faces }} รูป)</summary>
               <div class="thumbs" style="margin-top:8px">{% for i in "01234"|make_list|slice:r.faces %}<img src="{% url 'eval_face' e.id forloop.counter0 %}" alt="รูปหน้า" loading="lazy">{% endfor %}</div>
@@ -188,9 +188,11 @@
       <div class="panel-head"><h2>{% icon "sliders-horizontal" %} ข้อมูลวิดีโอ</h2></div>
       <form method="post" action="{% url 'eval_update' video.id %}">{% csrf_token %}
         <div class="field"><label for="v-name">ชื่อ</label><input type="text" id="v-name" name="name" value="{{ video.name }}" maxlength="120"></div>
+        {% if eval_training %}
         <div class="field"><label for="v-split">ชุดข้อมูล</label><select id="v-split" name="split">
           <option value="test" {% if video.split == "test" %}selected{% endif %}>ชุดทดสอบ (test)</option>
           <option value="train" {% if video.split == "train" %}selected{% endif %}>ชุดจูน (train)</option></select></div>
+        {% else %}<input type="hidden" name="split" value="{{ video.split }}">{% endif %}
         <div class="row" style="flex-wrap:nowrap">
           <div class="field" style="flex:1"><label for="v-light">แสง</label><select id="v-light" name="lighting">
             <option value="" {% if not video.lighting %}selected{% endif %}>-</option>

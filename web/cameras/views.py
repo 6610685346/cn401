@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import secrets
+from functools import wraps
 from urllib.parse import quote
 from pathlib import Path
 
@@ -379,9 +380,30 @@ def _after_settings_change(request, changed: list[str], done: str) -> None:
 
 
 # ------------------------------------------------------- floor / multi-camera
+def floor_map_required(view):
+    """404 while the floor plan is switched off ("ตั้งค่าระบบ" → ระบบแผนผัง)."""
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if not services.FLOOR_MAP:
+            raise Http404("ระบบแผนผังปิดอยู่ เปิดได้ในหน้าตั้งค่าระบบ")
+        return view(request, *args, **kwargs)
+    return wrapper
 
 
 @staff_member_required
+@require_POST
+def floor_map_toggle(request):
+    """The on/off button on the settings page."""
+    on = request.POST.get("on") == "1"
+    changed = system_settings.set_one("web.FLOOR_MAP", on, request.user)
+    if changed:
+        messages.success(request, "เปิดระบบแผนผังแล้ว" if on else
+                         "ปิดระบบแผนผังแล้ว · แต่ละกล้องทำงานแยกกัน ค่าปรับเทียบพื้นยังเก็บไว้")
+    return redirect("settings_page")
+
+
+@staff_member_required
+@floor_map_required
 def camera_calibrate(request, pk):
     camera = get_object_or_404(Camera, pk=pk)
     calibration = FloorCalibration.from_dict(camera.floor_calibration)
@@ -412,6 +434,7 @@ def camera_snapshot(request, pk):
 
 
 @staff_member_required
+@floor_map_required
 @require_POST
 def api_calibration(request, pk):
     camera = get_object_or_404(Camera, pk=pk)
@@ -482,6 +505,7 @@ def api_door(request, pk):
     return JsonResponse({"ok": True, "door_line": camera.door_line, "enabled": camera.enable_direction})
 
 
+@floor_map_required
 def floor_map(request):
     cameras = Camera.objects.all()
     return render(request, "cameras/floor.html", {
@@ -490,6 +514,7 @@ def floor_map(request):
     })
 
 
+@floor_map_required
 def api_floor(request):
     cameras = []
     for camera in Camera.objects.all():

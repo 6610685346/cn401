@@ -38,6 +38,7 @@ class Setting:
     restart: bool = True  # running cameras restart to pick it up
     cli: bool = False  # connect.py uses it too
     choices: tuple = ()  # ((value, label), ...) for str settings
+    in_form: bool = True  # False = has its own button on the settings page
 
     @property
     def is_bool(self) -> bool:
@@ -164,7 +165,15 @@ SETTINGS = [
     Setting("web.SHOW_EVAL_MENU", services, "SHOW_EVAL_MENU", bool, "เมนู",
             "แสดงเมนู \"ทดสอบด้วยวิดีโอ\"",
             "ซ่อนไว้ก่อนได้ ผลทดสอบและวิดีโอเดิมยังอยู่ครบ เปิดเมื่อจะวัดผล/เทียบโมเดล", restart=False),
+    Setting("web.EVAL_TRAINING", services, "EVAL_TRAINING", bool, "เมนู",
+            "ทดสอบด้วยวิดีโอ: เปิดส่วน train",
+            "แบ่งวิดีโอเป็นชุด train/test · จูนเกณฑ์ความเหมือนใบหน้าจากชุด train · ลงทะเบียนคนจากวิดีโอ "
+            "· ปิด = ใช้ทดสอบ (test) อย่างเดียว", restart=False),
     # -- multi-camera -------------------------------------------------------------
+    Setting("web.FLOOR_MAP", services, "FLOOR_MAP", bool, "รวมคนข้ามกล้อง",
+            "ระบบแผนผัง",
+            "หน้าแผนผัง · ปรับเทียบพื้น · รวมคนข้ามกล้อง (เลข G) · ปิด = แต่ละกล้องทำงานแยกกัน "
+            "ค่าปรับเทียบที่ทำไว้ยังอยู่", restart=False, in_form=False),
     Setting("hub.MATCH_RADIUS_M", hub_module, "MATCH_RADIUS_M", float, "รวมคนข้ามกล้อง",
             "ระยะห่างสูงสุดบนพื้นที่ยังนับว่าเป็นคนเดียวกัน (เมตร)",
             "มากขึ้น = รวมได้ง่ายขึ้นแม้ปรับเทียบไม่เป๊ะ แต่คนที่ยืนชิดกันอาจถูกรวมผิด",
@@ -180,6 +189,7 @@ SETTINGS = [
             "หลังจากนี้ถ้ากลับมาจะได้ G-เลขใหม่", 5, 600, 5, restart=False),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
+FORM_SETTINGS = [s for s in SETTINGS if s.in_form]
 
 
 def _file_default(setting: Setting):
@@ -263,6 +273,13 @@ def save(values: dict, user=None) -> list[str]:
         return apply(overrides)
 
 
+def set_one(key: str, value, user=None) -> list[str]:
+    """Change one setting (keeping the others as they are now); returns changed keys."""
+    values = current()
+    values[key] = _coerce(BY_KEY[key], value)
+    return save(values, user)
+
+
 def needs_restart(keys) -> bool:
     return any(BY_KEY[k].restart for k in keys)
 
@@ -276,7 +293,7 @@ class SettingsForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         values = current()
-        for s in SETTINGS:
+        for s in FORM_SETTINGS:
             name = field_name(s.key)
             if s.kind is bool:
                 field = forms.BooleanField(required=False)
@@ -296,11 +313,14 @@ class SettingsForm(forms.Form):
             self.fields[name] = field
 
     def values(self) -> dict:
-        return {s.key: self.cleaned_data[field_name(s.key)] for s in SETTINGS}
+        """Every setting: the form's fields, plus the current value of those with their own button."""
+        data = current()
+        data.update({s.key: self.cleaned_data[field_name(s.key)] for s in FORM_SETTINGS})
+        return data
 
     def groups(self):
         """[(group name, [bound fields])] in display order."""
         out = {}
-        for s in SETTINGS:
+        for s in FORM_SETTINGS:
             out.setdefault(s.group, []).append(self[field_name(s.key)])
         return list(out.items())

@@ -35,8 +35,13 @@ from person_detection.sources.stream import LatestFrameStream, open_stream
 log = logging.getLogger("cameras")
 
 JPEG_QUALITY = 80
-# Show "ทดสอบด้วยวิดีโอ" in the menu (hidden until needed; the page still works by URL)
-SHOW_EVAL_MENU = False
+# Show "ทดสอบด้วยวิดีโอ" in the menu (the page works by URL either way)
+SHOW_EVAL_MENU = True
+# Its "train" part: train/test split, threshold tuning, enrolling people from a video
+EVAL_TRAINING = False
+# Floor plan: the "แผนผัง" page, floor calibration and joining people across
+# cameras (G-numbers). Off = each camera works alone; calibrations are kept.
+FLOOR_MAP = True
 STREAM_TIMEOUT_SEC = 15  # no frame for this long -> reconnect
 MAX_BACKOFF_SEC = 30
 
@@ -130,7 +135,7 @@ class CameraWorker:
         self.snapshot_jpeg: bytes | None = None  # un-annotated, for calibration
         self.processor = None  # FrameProcessor, once the models are loaded
         self._snapshot_at = 0.0
-        self.link = CameraLink(hub, spec.name, spec.calibration)
+        self.link = CameraLink(hub, spec.name, spec.calibration, enabled=lambda: FLOOR_MAP)
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name=f"camera-{spec.name}", daemon=True)
         self._thread.start()

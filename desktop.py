@@ -158,6 +158,47 @@ class ServerThread:
             self._thread.join(timeout)
 
 
+class HangWatchdog(threading.Thread):
+    """Writes what every thread is doing to logs/hang_<time>.txt when the app stops answering.
+
+    Asks the app's own server for a tiny page every few seconds; when it does
+    not answer within TIMEOUT seconds (the app looks frozen), every thread's
+    Python stack goes to a file, so the cause can be found afterwards.
+    """
+
+    EVERY, TIMEOUT, MIN_GAP = 5.0, 15.0, 120.0
+
+    def __init__(self, base_url: str):
+        super().__init__(name="hang-watchdog", daemon=True)
+        self.url = base_url + "/login/"
+        self._last_dump = 0.0
+
+    def run(self) -> None:
+        import faulthandler
+        import urllib.request
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
+        while True:
+            time.sleep(self.EVERY)
+            started = time.monotonic()
+            try:
+                opener.open(self.url, timeout=self.TIMEOUT).read(64)
+                continue
+            except Exception as exc:
+                waited = time.monotonic() - started
+                if waited < self.TIMEOUT - 1 or time.monotonic() - self._last_dump < self.MIN_GAP:
+                    continue  # refused / an error page: not a hang
+                self._last_dump = time.monotonic()
+                path = LOG_DIR / f"hang_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(f"The app did not answer {self.url} for {waited:.0f}s ({exc!r}).\n\n")
+                        f.flush()
+                        faulthandler.dump_traceback(file=f, all_threads=True)
+                    log.warning("app not answering for %.0fs: thread stacks written to %s", waited, path)
+                except OSError:
+                    log.exception("could not write %s", path)
+
+
 class Backend:
     """Django + the two servers: the app's private one and the LAN history page."""
 
@@ -192,6 +233,7 @@ class Backend:
             raise RuntimeError(f"เปิดเซิร์ฟเวอร์ของแอปไม่ได้: {self.app_server.error}")
         self.app_url = f"http://127.0.0.1:{port}"
         log.info("app server on %s", self.app_url)
+        HangWatchdog(self.app_url).start()
 
         self._start_web(with_mode(application, WEB))
         return f"{self.app_url}/app-login/{self.token}/"

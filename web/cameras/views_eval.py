@@ -111,7 +111,7 @@ def evaluate(request):
     face_model = config.FACE_RECOGNIZER
     train = [v for v in videos if v.split == "train" and v.status in ("done", "cancelled")
              and ((v.stats or {}).get("face_model") or "sface") == face_model]
-    sweep = evaluation.threshold_sweep(train, face_model) if train else None
+    sweep = evaluation.threshold_sweep(train, face_model) if train and services.EVAL_TRAINING else None
     for v in videos:
         v.model_label = evaluation.model_label(v.stats) if v.stats else ""
     return render(request, "cameras/evaluate.html", {
@@ -325,6 +325,8 @@ def eval_missed(request, pk):
 @require_POST
 def eval_enroll(request, pk):
     """Register a person from the photos a video event collected."""
+    if not services.EVAL_TRAINING:
+        raise Http404("ส่วน train ปิดอยู่ (ตั้งค่าระบบ → เมนู)")
     event = get_object_or_404(EvalEvent, pk=pk)
     name = request.POST.get("name", "").strip()
     paths = [Path(p) for p in (event.face_photos or []) if Path(p).is_file()]
@@ -349,6 +351,8 @@ def eval_enroll(request, pk):
 @staff_member_required
 @require_POST
 def eval_apply_threshold(request):
+    if not services.EVAL_TRAINING:
+        raise Http404("ส่วน train ปิดอยู่ (ตั้งค่าระบบ → เมนู)")
     try:
         value = round(float(request.POST.get("threshold", "")), 3)
     except ValueError:

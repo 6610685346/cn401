@@ -75,7 +75,7 @@
       <div><span>ความละเอียด</span><b class="small" data-field="source_size">-</b></div>
     </div>
     <div class="cam-body">
-      <span class="badge {% if camera.is_calibrated %}on{% endif %}">{% icon "crosshair" %}{% if camera.is_calibrated %}ปรับเทียบพื้นแล้ว · รวมกับกล้องอื่นได้{% else %}ยังไม่ปรับเทียบพื้น{% endif %}</span>
+      {% if floor_map_on %}<span class="badge {% if camera.is_calibrated %}on{% endif %}">{% icon "crosshair" %}{% if camera.is_calibrated %}ปรับเทียบพื้นแล้ว · รวมกับกล้องอื่นได้{% else %}ยังไม่ปรับเทียบพื้น{% endif %}</span>{% endif %}
       <span class="badge {% if camera.has_door and camera.enable_direction %}on{% endif %}">{% icon "door-open" %}{% if camera.has_door and camera.enable_direction %}นับเข้า/ออกอยู่{% elif camera.has_door %}มีเส้นประตู (ปิดการนับ){% else %}ยังไม่มีเส้นประตู{% endif %}</span>
       <p class="small muted" data-field="message" style="margin:8px 0 0">{{ camera.state.message }}</p>
     </div>
@@ -88,7 +88,7 @@
       </form>
       <a class="btn sm" href="{% url 'camera_edit' camera.id %}">{% icon "sliders-horizontal" %} ตั้งค่า</a>
       <a class="btn sm" href="{% url 'camera_door' camera.id %}">{% icon "door-open" %} เส้นประตู</a>
-      <a class="btn sm" href="{% url 'camera_calibrate' camera.id %}">{% icon "crosshair" %} ปรับเทียบพื้น</a>
+      {% if floor_map_on %}<a class="btn sm" href="{% url 'camera_calibrate' camera.id %}">{% icon "crosshair" %} ปรับเทียบพื้น</a>{% endif %}
       {% endif %}
     </div>
   </div>

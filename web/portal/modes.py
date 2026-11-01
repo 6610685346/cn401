@@ -63,4 +63,6 @@ def context(request) -> dict:
         from cameras import services  # imported lazily: loads the detection code
         data["web_info"] = services.web_info
         data["show_eval_menu"] = services.SHOW_EVAL_MENU  # "ตั้งค่าระบบ" → เมนู
+        data["eval_training"] = services.EVAL_TRAINING
+        data["floor_map_on"] = services.FLOOR_MAP  # "ตั้งค่าระบบ" → ระบบแผนผัง
     return data

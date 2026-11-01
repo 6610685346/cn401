@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <span class="eyebrow">{% icon "flask-conical" %} ทดสอบ · จูน · วัดผล</span>
+    <span class="eyebrow">{% icon "flask-conical" %} ทดสอบ{% if eval_training %} · จูน{% endif %} · วัดผล</span>
     <h1>ทดสอบด้วยวิดีโอ</h1>
     <p class="sub">อัปโหลดวิดีโอที่ถ่ายไว้ ระบบจะเล่นผ่านขั้นตอนเดียวกับกล้องจริงทุกอย่าง (ตรวจจับ ติดตาม จำหน้า นับเข้า/ออก)
       แล้วแสดงทุกแถวที่ระบบจะบันทึก ให้ตรวจว่าถูกหรือผิด จากนั้นคำนวณตัวชี้วัดตามรายงานให้ทันที
@@ -14,10 +14,10 @@
 </div>
 
 <div class="steps-bar">
-  <div class="step"><span>1</span><div><b>อัปโหลด</b><small>เลือกชุด train หรือ test</small></div></div>
+  <div class="step"><span>1</span><div><b>อัปโหลด</b><small>{% if eval_training %}เลือกชุด train หรือ test{% else %}วิดีโอจากกล้องจริง{% endif %}</small></div></div>
   <div class="step"><span>2</span><div><b>ระบบจำลองการทำงาน</b><small>เหมือนกล้องจริง</small></div></div>
   <div class="step"><span>3</span><div><b>ตรวจผล</b><small>กดถูก/ผิด ทีละแถว</small></div></div>
-  <div class="step"><span>4</span><div><b>ดูตัวชี้วัด / จูนค่า</b><small>Precision · FAR · FRR · เข้า/ออก</small></div></div>
+  <div class="step"><span>4</span><div><b>ดูตัวชี้วัด{% if eval_training %} / จูนค่า{% endif %}</b><small>Precision · FAR · FRR · เข้า/ออก</small></div></div>
 </div>
 
 {% if user.is_staff %}
@@ -39,9 +39,11 @@
       <div style="flex:1;min-width:260px">
         <div class="field"><label for="name">ชื่อวิดีโอ</label>
           <input type="text" name="name" id="name" maxlength="120" placeholder="เช่น ประตูหน้า เช้า 24 ต.ค."></div>
+        {% if eval_training %}
         <div class="field"><label>ชุดข้อมูล</label>
           <div class="seg">{% for v, t in split_choices %}<label><input type="radio" name="split" value="{{ v }}" {% if v == "test" %}checked{% endif %}><span>{{ t }}</span></label>{% endfor %}</div>
           <div class="help">train = ใช้หาค่า threshold ที่ดีที่สุด · test = ใช้รายงานผล (อย่าใช้วิดีโอเดียวกันทั้งสองชุด)</div></div>
+        {% else %}<input type="hidden" name="split" value="test">{% endif %}
         <div class="row" style="flex-wrap:nowrap">
           <div class="field" style="flex:1"><label for="lighting">สภาพแสง</label>
             <select name="lighting" id="lighting">{% for v, t in lighting_choices %}<option value="{{ v }}">{{ t }}</option>{% endfor %}</select></div>
@@ -97,6 +99,7 @@
 </div>
 {% endif %}
 
+{% if eval_training %}
 <div class="panel" style="margin-bottom:22px">
   <div class="panel-head"><h2>{% icon "sliders-horizontal" %} จูนเกณฑ์ความเหมือนใบหน้าจากชุด train</h2>
     <span class="badge">ตอนนี้ระบบใช้ τ = {{ current_threshold }} ({{ face_model }})</span></div>
@@ -144,17 +147,19 @@
   {% endif %}
 </div>
 
+{% endif %}
+
 <div class="panel">
   <div class="panel-head"><h2>{% icon "list-checks" %} วิดีโอทั้งหมด</h2><span class="badge">{{ videos|length }} วิดีโอ</span></div>
   {% if videos %}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>วิดีโอ</th><th>ชุด</th><th>เงื่อนไข</th><th>โมเดล</th><th>สถานะ</th><th>แถว</th><th>ตรวจแล้ว</th><th>อัปโหลด</th><th></th></tr></thead>
+    <thead><tr><th>วิดีโอ</th>{% if eval_training %}<th>ชุด</th>{% endif %}<th>เงื่อนไข</th><th>โมเดล</th><th>สถานะ</th><th>แถว</th><th>ตรวจแล้ว</th><th>อัปโหลด</th><th></th></tr></thead>
     <tbody>
     {% for v in videos %}
       <tr data-video="{{ v.id }}" data-status="{{ v.status }}" data-status-url="{% url 'api_eval_status' v.id %}">
         <td><a href="{% url 'evaluate_detail' v.id %}"><b>{{ v.name }}</b></a></td>
-        <td><span class="badge {% if v.split == 'train' %}accent{% endif %}">{{ v.get_split_display }}</span></td>
+        {% if eval_training %}<td><span class="badge {% if v.split == 'train' %}accent{% endif %}">{{ v.get_split_display }}</span></td>{% endif %}
         <td class="small">{{ v.get_lighting_display|default:"" }}{% if v.lighting and v.distance %} · {% endif %}{{ v.get_distance_display|default:"" }}</td>
         <td class="small">{{ v.model_label|default:"–" }}{% if v.runs %} <span class="badge" title="ประมวลผลมาแล้ว {{ v.runs|length }} รอบก่อนหน้า">+{{ v.runs|length }} รอบ</span>{% endif %}</td>
         <td><span class="pill s-{% if v.status == 'done' %}running{% elif v.status == 'error' %}error{% elif v.status == 'cancelled' %}stopped{% else %}loading{% endif %}" data-field="status">{{ v.get_status_display }}</span>

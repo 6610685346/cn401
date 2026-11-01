@@ -1,4 +1,4 @@
-"""ดูหลายกล้อง (several cameras at once) and the hidden video-test menu.
+"""ดูหลายกล้อง (several cameras at once), the hidden video-test menu and the floor-plan switch.
 
 Run from the web folder:   python manage.py test cameras.tests_wall
 """
@@ -67,11 +67,75 @@ class WallTest(base.PortalTestBase):
 
 
 class EvalMenuTest(base.PortalTestBase):
-    def test_hidden_until_switched_on(self):
+    def test_menu_shown_and_can_be_hidden(self):
         self.client.force_login(self.admin)
-        self.assertNotIn('href="/evaluate/"', self.client.get("/").content.decode())
-        self.assertEqual(self.client.get("/evaluate/").status_code, 200)  # page still works
-        form = base.SystemSettingsTest.form_data(self, **{"web.SHOW_EVAL_MENU": True})
-        self.client.post("/settings/", form)
-        self.assertTrue(services.SHOW_EVAL_MENU)
         self.assertIn('href="/evaluate/"', self.client.get("/").content.decode())
+        form = base.SystemSettingsTest.form_data(self, **{"web.SHOW_EVAL_MENU": False})
+        self.client.post("/settings/", form)
+        self.assertFalse(services.SHOW_EVAL_MENU)
+        self.assertNotIn('href="/evaluate/"', self.client.get("/").content.decode())
+        self.assertEqual(self.client.get("/evaluate/").status_code, 200)  # page still works by URL
+
+    def test_train_part_off(self):
+        services.EVAL_TRAINING = False
+        self.client.force_login(self.admin)
+        html = self.client.get("/evaluate/").content.decode()
+        self.assertNotIn("จูนเกณฑ์ความเหมือนใบหน้าจากชุด train", html)
+        self.assertNotIn('name="split" value="train"', html)
+        self.assertIn('<input type="hidden" name="split" value="test">', html)
+        self.assertEqual(self.client.post("/evaluate/threshold/", {"threshold": "0.4"}).status_code, 404)
+        services.EVAL_TRAINING = True
+        html = self.client.get("/evaluate/").content.decode()
+        self.assertIn("จูนเกณฑ์ความเหมือนใบหน้าจากชุด train", html)
+
+
+class FloorMapSwitchTest(base.PortalTestBase):
+    def test_switch_off_and_on(self):
+        from . import system_settings
+        camera = Camera.objects.create(name="ประตู", source="0")
+        self.client.force_login(self.admin)
+        self.assertIn('href="/floor/"', self.client.get("/").content.decode())
+        self.assertIn("ปิดระบบแผนผัง", self.client.get("/settings/").content.decode())
+
+        self.client.post("/settings/floor-map/", {"on": "0"})
+        self.assertFalse(services.FLOOR_MAP)
+        self.assertEqual(system_settings.read_saved().get("web.FLOOR_MAP"), False)
+        home = self.client.get("/").content.decode()
+        self.assertNotIn('href="/floor/"', home)
+        self.assertNotIn(f"/cameras/{camera.id}/calibrate/", home)
+        for url in ("/floor/", "/api/floor/", f"/cameras/{camera.id}/calibrate/"):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+        self.assertEqual(self.client.post(f"/api/cameras/{camera.id}/calibration/", "{}",
+                                          content_type="application/json").status_code, 404)
+        self.assertIn("เปิดระบบแผนผัง", self.client.get("/settings/").content.decode())
+
+        # saving the settings form (which has no field for it) keeps it off
+        self.client.post("/settings/", base.SystemSettingsTest.form_data(self))
+        self.assertFalse(services.FLOOR_MAP)
+
+        self.client.post("/settings/floor-map/", {"on": "1"})
+        self.assertTrue(services.FLOOR_MAP)
+        self.assertEqual(self.client.get("/floor/").status_code, 200)
+
+    def test_viewer_cannot_switch(self):
+        self.client.force_login(self.viewer)
+        self.client.post("/settings/floor-map/", {"on": "0"})
+        self.assertTrue(services.FLOOR_MAP)
+
+    def test_link_leaves_the_hub_when_off(self):
+        from types import SimpleNamespace
+        from person_detection.multicam.hub import IdentityHub
+        from person_detection.multicam.link import CameraLink
+        on = [True]
+        hub = IdentityHub()
+        link = CameraLink(hub, "a", enabled=lambda: on[0])
+        person = SimpleNamespace(track_id=1, foot=None, name=None, global_id=None, cameras=[])
+        link(SimpleNamespace(people=[person]))
+        self.assertIsNotNone(person.global_id)
+        self.assertIsNotNone(link.lookup(1))
+        on[0] = False
+        later = SimpleNamespace(track_id=1, foot=None, name=None, global_id=None, cameras=[])
+        link(SimpleNamespace(people=[later]))
+        self.assertIsNone(later.global_id)
+        self.assertIsNone(link.lookup(1))
+        self.assertEqual(hub.snapshot(), [])

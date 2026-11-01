@@ -28,6 +28,7 @@ urlpatterns = [
     path("api/cameras/<int:pk>/calibration/", views.api_calibration, name="api_calibration"),
     path("floor/", views.floor_map, name="floor_map"),
     path("settings/", views.settings_page, name="settings_page"),
+    path("settings/floor-map/", views.floor_map_toggle, name="floor_map_toggle"),
     path("api/gallery/", views.api_gallery_status, name="api_gallery_status"),
     path("people/gallery/rebuild/", views.gallery_rebuild, name="gallery_rebuild"),
     path("api/floor/", views.api_floor, name="api_floor"),

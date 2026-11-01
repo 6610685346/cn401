@@ -45,6 +45,7 @@ class PortalTestBase(TestCase):
         self._saved_settings_path = config.SETTINGS_PATH
         config.SETTINGS_PATH = Path(self.tmp) / "settings.json"
         services.reset_shared_state()
+        services.EVAL_TRAINING = True  # the video-test tests use the train part too
 
     def tearDown(self):
         config.OUTPUT_DIR, config.PEOPLE_DB_PATH, config.WARDROBE_LOG_PATH, config.PHOTOS_DIR = self._saved

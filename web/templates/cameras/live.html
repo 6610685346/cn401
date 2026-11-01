@@ -17,7 +17,7 @@
     </form>
     <a class="btn" href="{% url 'camera_edit' camera.id %}">{% icon "sliders-horizontal" %} ตั้งค่า</a>
     <a class="btn" href="{% url 'camera_door' camera.id %}">{% icon "door-open" %} เส้นประตู</a>
-    <a class="btn" href="{% url 'camera_calibrate' camera.id %}">{% icon "crosshair" %} ปรับเทียบพื้น</a>
+    {% if floor_map_on %}<a class="btn" href="{% url 'camera_calibrate' camera.id %}">{% icon "crosshair" %} ปรับเทียบพื้น</a>{% endif %}
     {% endif %}
   </div>
 </div>

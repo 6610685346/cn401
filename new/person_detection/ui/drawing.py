@@ -1,6 +1,11 @@
 """Everything painted onto the frame."""
 
+import functools
+import glob
+import os
+
 import cv2
+import numpy as np
 
 from ..vision.colors import Appearance
 from ..vision.detector import Detection
@@ -15,6 +20,51 @@ FACE_COLOR = (0, 255, 0)
 TEXT_COLOR = (255, 255, 255)
 
 
+# OpenCV's own font has only ASCII: a Thai name would show as "?????".
+# Labels with other characters are drawn with Pillow and a font that has Thai.
+UNICODE_FONTS = [
+    r"C:\Windows\Fonts\LeelawUI.ttf", r"C:\Windows\Fonts\leelawad.ttf", r"C:\Windows\Fonts\tahoma.ttf",
+    "/usr/share/fonts/truetype/tlwg/Loma.ttf", "/usr/share/fonts/opentype/tlwg/Loma.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf", "/System/Library/Fonts/Thonburi.ttc",
+]
+
+
+@functools.lru_cache(maxsize=8)
+def _unicode_font(size: int):
+    try:
+        from PIL import ImageFont
+    except ImportError:
+        return None
+    candidates = UNICODE_FONTS + sorted(glob.glob("/usr/share/fonts/**/*[Tt]hai*.[ot]tf", recursive=True))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+    return None
+
+
+def _draw_unicode_label(frame: Frame, text: str, x: int, y: int, scale: float, bg_color) -> bool:
+    font = _unicode_font(max(10, round(scale * 32)))
+    if font is None:
+        return False
+    from PIL import Image, ImageDraw
+    left, top, right, bottom = font.getbbox(text)
+    text_w, text_h = right - left, bottom - top
+    height, width = frame.shape[:2]
+    x1, y1 = max(0, x), max(0, y - text_h - 10)
+    x2, y2 = min(width, x + text_w + 8), min(height, max(y, y1 + 1))
+    if x2 <= x1 or y2 <= y1:
+        return True
+    cv2.rectangle(frame, (x1, y1), (x2, y2), bg_color, cv2.FILLED)
+    roi = frame[y1:y2, x1:x2]
+    image = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))
+    ImageDraw.Draw(image).text((4 - left, 5 - top), text, font=font, fill=TEXT_COLOR[::-1])
+    frame[y1:y2, x1:x2] = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
+    return True
+
+
 def draw_label(
     frame: Frame,
     text: str,
@@ -25,6 +75,8 @@ def draw_label(
 ) -> None:
     """Draw text on a filled rectangle, anchored at its bottom-left corner."""
     x, y = position
+    if not text.isascii() and _draw_unicode_label(frame, text, x, y, scale, bg_color):
+        return
     (text_w, text_h), baseline = cv2.getTextSize(text, FONT, scale, thickness)
     top_left = (x, y - text_h - baseline - 4)
     bottom_right = (x + text_w + 8, y)
